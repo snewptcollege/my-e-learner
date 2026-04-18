@@ -381,6 +381,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-
   .form-actions .btn{flex:1;min-width:100px;text-align:center}
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" defer onerror="console.warn('mammoth.js not loaded - Word import unavailable')"></script>
 </head>
 <body>
@@ -608,6 +609,291 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-
 // ═══════════════════════════════════════
 const STORE = 'myelearner_sachdeva_v1'; // Fixed key - never change this
 
+// ═══════════════════════════════════════
+//   SUPABASE CONFIG
+// ═══════════════════════════════════════
+const SUPABASE_URL = 'https://scizvxcrwpqqawyoyzwr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_tptmCB820gIv50c3GB0PGg_LdVbSVQZ';
+let _sb = null;
+
+function getSB() {
+  if (!_sb && window.supabase) {
+    _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+  return _sb;
+}
+
+// Convert db user object to Supabase row
+function userToRow(u) {
+  return {
+    username: u.username,
+    password: u.password,
+    name: u.name,
+    email: u.email || '',
+    phone: u.phone || '',
+    role: u.role || 'student',
+    status: u.status || 'approved',
+    suspended: u.suspended || false,
+    assigned_categories: u.assignedCategories || [],
+    assigned_subcategories: u.assignedSubcategories || [],
+    source: u.source || 'admin',
+    registered_on: u.registeredOn || ''
+  };
+}
+
+// Convert Supabase row to db user object
+function rowToUser(r) {
+  return {
+    username: r.username,
+    password: r.password,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    role: r.role,
+    status: r.status,
+    suspended: r.suspended,
+    assignedCategories: r.assigned_categories || [],
+    assignedSubcategories: r.assigned_subcategories || [],
+    source: r.source,
+    registeredOn: r.registered_on,
+    registeredAt: r.registered_at
+  };
+}
+
+function testToRow(t) {
+  return {
+    id: t.id,
+    title: t.title,
+    type: t.type || 'full',
+    subject: t.subject || 'All',
+    exam_category: t.examCategory || 'SSC',
+    subcategory_id: t.subcategoryId || '',
+    questions: t.questions || [],
+    duration: t.duration || 60,
+    marks: t.marks || 200,
+    neg_marking: t.negMarking || 0.5,
+    description: t.description || '',
+    published: t.published || false
+  };
+}
+
+function rowToTest(r) {
+  return {
+    id: r.id,
+    title: r.title,
+    type: r.type,
+    subject: r.subject,
+    examCategory: r.exam_category,
+    subcategoryId: r.subcategory_id,
+    questions: r.questions || [],
+    duration: r.duration,
+    marks: r.marks,
+    negMarking: r.neg_marking,
+    description: r.description,
+    published: r.published
+  };
+}
+
+function questionToRow(q) {
+  return {
+    id: q.id,
+    subject: q.subject || 'General',
+    text: q.text,
+    options: q.options || [],
+    correct: q.correct || 0,
+    explanation: q.explanation || '',
+    image: q.image || ''
+  };
+}
+
+function rowToQuestion(r) {
+  return {
+    id: r.id,
+    subject: r.subject,
+    text: r.text,
+    options: r.options || [],
+    correct: r.correct,
+    explanation: r.explanation,
+    image: r.image
+  };
+}
+
+function resultToRow(r) {
+  return {
+    id: r.id,
+    test_id: r.testId,
+    test_title: r.testTitle,
+    username: r.username,
+    user_name: r.userName,
+    correct: r.correct,
+    wrong: r.wrong,
+    skipped: r.skipped,
+    score: r.score,
+    max_score: r.maxScore,
+    percent: r.percent,
+    sec_stats: r.secStats || {},
+    time_taken: r.timeTaken,
+    answers: r.answers || []
+  };
+}
+
+function rowToResult(r) {
+  return {
+    id: r.id,
+    testId: r.test_id,
+    testTitle: r.test_title,
+    username: r.username,
+    userName: r.user_name,
+    correct: r.correct,
+    wrong: r.wrong,
+    skipped: r.skipped,
+    score: r.score,
+    maxScore: r.max_score,
+    percent: r.percent,
+    secStats: r.sec_stats || {},
+    timeTaken: r.time_taken,
+    answers: r.answers || [],
+    timestamp: r.timestamp
+  };
+}
+
+// ═══════════════════════════════════════
+//   SUPABASE SYNC FUNCTIONS
+// ═══════════════════════════════════════
+async function syncFromSupabase() {
+  const sb = getSB();
+  if (!sb) return false;
+  try {
+    const [usersRes, testsRes, questionsRes, resultsRes, subcatsRes] = await Promise.all([
+      sb.from('users').select('*'),
+      sb.from('tests').select('*'),
+      sb.from('questions').select('*'),
+      sb.from('results').select('*'),
+      sb.from('subcategories').select('*')
+    ]);
+    if (usersRes.error || testsRes.error) return false;
+
+    const remoteUsers = (usersRes.data||[]).map(rowToUser);
+    db.tests = (testsRes.data||[]).map(rowToTest);
+    db.questions = (questionsRes.data||[]).map(rowToQuestion);
+    db.results = (resultsRes.data||[]).map(rowToResult);
+    db.subcategories = subcatsRes.data || [];
+
+    // If Supabase has no admin, push everything from localStorage
+    const hasAdmin = remoteUsers.find(u => u.role === 'admin');
+    if (!hasAdmin) {
+      // Push local admin to Supabase
+      const localRaw = localStorage.getItem(STORE);
+      if (localRaw) {
+        const localDb = JSON.parse(localRaw);
+        const localAdmin = localDb.users.find(u => u.role === 'admin');
+        if (localAdmin) {
+          await sb.from('users').upsert(userToRow(localAdmin), {onConflict:'username'});
+          remoteUsers.unshift(localAdmin);
+        }
+        // Push all local students too
+        const localStudents = localDb.users.filter(u => u.role === 'student');
+        for (const stu of localStudents) {
+          await sb.from('users').upsert(userToRow(stu), {onConflict:'username'});
+          remoteUsers.push(stu);
+        }
+        // Push local tests
+        if (localDb.tests && localDb.tests.length && db.tests.length === 0) {
+          for (const t of localDb.tests) {
+            await sb.from('tests').upsert(testToRow(t), {onConflict:'id'});
+          }
+          db.tests = localDb.tests;
+        }
+        // Push local questions
+        if (localDb.questions && localDb.questions.length && db.questions.length === 0) {
+          const qrows = localDb.questions.map(q => questionToRow(q));
+          if (qrows.length) await sb.from('questions').upsert(qrows, {onConflict:'id'});
+          db.questions = localDb.questions;
+        }
+        // Push local subcategories
+        if (localDb.subcategories && localDb.subcategories.length && db.subcategories.length === 0) {
+          for (const sc of localDb.subcategories) {
+            await sb.from('subcategories').upsert(sc, {onConflict:'id'});
+          }
+          db.subcategories = localDb.subcategories;
+        }
+      } else {
+        // No local data either - use default admin
+        const adminDefault = DEFAULT_USERS.find(u => u.role === 'admin');
+        await sb.from('users').upsert(userToRow(adminDefault), {onConflict:'username'});
+        remoteUsers.unshift(adminDefault);
+      }
+    }
+
+    db.users = remoteUsers;
+    // Save to localStorage as cache
+    localStorage.setItem(STORE, JSON.stringify(db));
+    return true;
+  } catch(err) {
+    console.warn('Supabase sync failed:', err);
+    return false;
+  }
+}
+
+async function pushUserToSupabase(user) {
+  const sb = getSB();
+  if (!sb || user.role === 'admin') return; // don't sync admin to supabase
+  try {
+    await sb.from('users').upsert(userToRow(user), {onConflict: 'username'});
+  } catch(e) { console.warn('Push user failed:', e); }
+}
+
+async function deleteUserFromSupabase(username) {
+  const sb = getSB();
+  if (!sb) return;
+  try { await sb.from('users').delete().eq('username', username); }
+  catch(e) { console.warn('Delete user failed:', e); }
+}
+
+async function pushTestToSupabase(test) {
+  const sb = getSB();
+  if (!sb) return;
+  try { await sb.from('tests').upsert(testToRow(test), {onConflict: 'id'}); }
+  catch(e) { console.warn('Push test failed:', e); }
+}
+
+async function deleteTestFromSupabase(id) {
+  const sb = getSB();
+  if (!sb) return;
+  try { await sb.from('tests').delete().eq('id', id); }
+  catch(e) { console.warn('Delete test failed:', e); }
+}
+
+async function pushQuestionsToSupabase(questions) {
+  const sb = getSB();
+  if (!sb) return;
+  try {
+    const rows = questions.map(q => questionToRow(q));
+    if (rows.length) await sb.from('questions').upsert(rows, {onConflict: 'id'});
+  } catch(e) { console.warn('Push questions failed:', e); }
+}
+
+async function pushResultToSupabase(result) {
+  const sb = getSB();
+  if (!sb) return;
+  try { await sb.from('results').upsert(resultToRow(result), {onConflict: 'id'}); }
+  catch(e) { console.warn('Push result failed:', e); }
+}
+
+async function pushSubcatToSupabase(sc) {
+  const sb = getSB();
+  if (!sb) return;
+  try { await sb.from('subcategories').upsert(sc, {onConflict: 'id'}); }
+  catch(e) { console.warn('Push subcat failed:', e); }
+}
+
+async function deleteSubcatFromSupabase(id) {
+  const sb = getSB();
+  if (!sb) return;
+  try { await sb.from('subcategories').delete().eq('id', id); }
+  catch(e) { console.warn('Delete subcat failed:', e); }
+}
+
 // ── DEFAULT ADMIN & STUDENT ACCOUNTS ──
 const DEFAULT_USERS = [
   { username:'admin', password:'admin123', role:'admin', name:'Prashant (Admin)' },
@@ -647,51 +933,38 @@ let examState = null;
 let timerInterval = null;
 
 function loadDB() {
-  // Clear old version keys once
-  ['sachdeva_tests_v2', 'sachdeva_tests_v3'].forEach(k => localStorage.removeItem(k));
-
+  // Load from localStorage cache first (fast startup)
   const raw = localStorage.getItem(STORE);
   if (raw) {
-    // Load saved data — preserve everything including admin credentials
     db = JSON.parse(raw);
-    // Remove old seed students if still present
     const seedUsernames = ['student1','student2','student3','student4'];
     db.users = db.users.filter(u => !seedUsernames.includes(u.username));
-    // Ensure subcategories array exists
     if (!db.subcategories) db.subcategories = [];
-    // Only add admin if completely missing — never overwrite saved admin credentials
     const adminIdx = db.users.findIndex(u => u.role === 'admin');
-    if (adminIdx < 0) {
-      db.users.unshift(DEFAULT_USERS.find(u => u.role === 'admin'));
-    }
-    // Migrate: ensure tests have published field
-    db.tests.forEach(t => {
-      if (t.published === undefined) t.published = true;
-    });
+    if (adminIdx < 0) db.users.unshift(DEFAULT_USERS.find(u => u.role === 'admin'));
+    db.tests.forEach(t => { if (t.published === undefined) t.published = true; });
   } else {
-    // First time load — start fresh
-    db = {
-      users: [...DEFAULT_USERS],
-      questions: [],
-      tests: [],
-      results: [],
-      subcategories: []
-    };
-  }
-  saveDB();
-}
-function saveDB() {
-  try {
+    db = { users: [...DEFAULT_USERS], questions: [], tests: [], results: [], subcategories: [] };
     localStorage.setItem(STORE, JSON.stringify(db));
-  } catch(err) {
-    // Quota exceeded - save without images
-    try {
-      const lite = JSON.parse(JSON.stringify(db));
-      lite.questions = lite.questions.map(q => { const c={...q}; if(c.image) c.image=null; return c; });
-      localStorage.setItem(STORE, JSON.stringify(lite));
-    } catch(e2) { console.warn('saveDB failed', e2); }
   }
 }
+
+function saveDB() {
+  try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
+}
+
+// Full sync from Supabase — called on login
+async function syncDB() {
+  showLoadingOverlay('Syncing data...');
+  const ok = await syncFromSupabase();
+  hideLoadingOverlay();
+  if (ok) {
+    console.log('Synced from Supabase OK');
+  } else {
+    console.warn('Using local cache');
+  }
+}
+
 
 // ═══════════════════════════════════════
 //   AUTH
@@ -729,50 +1002,42 @@ function doLogin() {
   const p   = document.getElementById('loginPass').value;
   const err = document.getElementById('loginErr');
   err.style.display = 'none';
-  const user = db.users.find(x =>
-    (x.username === raw || (x.email && x.email.toLowerCase() === raw)) &&
-    x.password === p && x.role === loginTab
-  );
-  if (user) {
-    if (user.suspended) {
-      err.textContent = 'Your account has been suspended. Contact the admin.';
-      err.style.display = 'block'; return;
-    }
-    if (user.status === 'pending') {
-      err.textContent = 'Your registration is pending admin approval. Please wait.';
-      err.style.display = 'block'; return;
-    }
-    if (user.status === 'rejected') {
-      err.textContent = 'Your registration was rejected. Contact admin for help.';
-      err.style.display = 'block'; return;
-    }
-    // Always use fresh db data so assignedCategories are current
-    currentUser = db.users.find(u => u.username === user.username) || user;
-    sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
-    document.getElementById('loginWrap').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('userChipName').textContent = user.name.split(' ')[0];
-    document.getElementById('userAv').textContent = user.name[0].toUpperCase();
-    if (user.role === 'admin') {
-      showAdminUI();
-    } else {
-      showStudentUI();
-    }
-    updatePendingBadge();
-    goPage('home');
-    // Remind admin to backup periodically
-    if (user.role === 'admin') {
-      const lastBackup = localStorage.getItem('last_backup_reminder');
-      const now = Date.now();
-      if (!lastBackup || now - parseInt(lastBackup) > 3 * 24 * 60 * 60 * 1000) {
-        localStorage.setItem('last_backup_reminder', now);
-        setTimeout(() => showToast('💾 Reminder: Download a backup from Admin Profile to keep your data safe!', 'warn'), 2000);
+
+  // First sync from Supabase to get latest data
+  showLoadingOverlay('Connecting...');
+  syncFromSupabase().then(() => {
+    hideLoadingOverlay();
+    const user = db.users.find(x =>
+      (x.username === raw || (x.email && x.email.toLowerCase() === raw)) &&
+      x.password === p && x.role === loginTab
+    );
+    if (user) {
+      if (user.suspended) {
+        err.textContent = 'Your account has been suspended. Contact the admin.';
+        err.style.display = 'block'; return;
       }
+      if (user.status === 'pending') {
+        err.textContent = 'Your registration is pending admin approval. Please wait.';
+        err.style.display = 'block'; return;
+      }
+      if (user.status === 'rejected') {
+        err.textContent = 'Your registration was rejected. Contact admin for help.';
+        err.style.display = 'block'; return;
+      }
+      currentUser = db.users.find(u => u.username === user.username) || user;
+      sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
+      document.getElementById('loginWrap').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('userChipName').textContent = user.name.split(' ')[0];
+      document.getElementById('userAv').textContent = user.name[0].toUpperCase();
+      if (user.role === 'admin') showAdminUI(); else showStudentUI();
+      updatePendingBadge();
+      goPage('home');
+    } else {
+      err.textContent = 'Invalid email/username or password.';
+      err.style.display = 'block';
     }
-  } else {
-    err.textContent = 'Invalid email/username or password.';
-    err.style.display = 'block';
-  }
+  });
 }
 
 function doSignup() {
@@ -811,6 +1076,7 @@ function doSignup() {
   };
   db.users.push(newUser);
   saveDB();
+  pushUserToSupabase(newUser);
   // Clear the form
   ['su_fullname','su_phone','su_email','su_pass','su_pass2'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
@@ -834,6 +1100,28 @@ function doLogout() {
   document.getElementById('loginPass').value = '';
   document.getElementById('loginErr').style.display = 'none';
   switchAuthMode('signin');
+}
+
+function showLoadingOverlay(msg) {
+  let ov = document.getElementById('loadingOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'loadingOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:Nunito,sans-serif';
+    ov.innerHTML = '<div style="width:44px;height:44px;border:4px solid var(--primary-border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></div>'
+      + '<div id="loadingMsg" style="font-size:14px;font-weight:700;color:var(--text2)">Loading...</div>';
+    document.body.appendChild(ov);
+    const style = document.createElement('style');
+    style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(style);
+  }
+  ov.style.display = 'flex';
+  document.getElementById('loadingMsg').textContent = msg || 'Loading...';
+}
+
+function hideLoadingOverlay() {
+  const ov = document.getElementById('loadingOverlay');
+  if (ov) ov.style.display = 'none';
 }
 
 function checkSession() {
@@ -2037,7 +2325,10 @@ function saveNewTest() {
   };
   db.tests.push(newTest);
   window._newTestQuestions = [];
-  saveDB(); closeModal(); goPage('admin');
+  saveDB();
+  pushTestToSupabase(newTest);
+  pushQuestionsToSupabase(newQuestions);
+  closeModal(); goPage('admin');
   showToast('Test created with ' + questionIds.length + ' questions!', 'success');
 }
 
@@ -2281,8 +2572,10 @@ function saveSubcategory(categoryId) {
   const name = (document.getElementById('sc_name')?.value || '').trim();
   if (!name) { showToast('Name is required', 'error'); return; }
   if (!db.subcategories) db.subcategories = [];
-  db.subcategories.push({ id: 'sc_' + Date.now(), categoryId, name });
+  const newSc = { id: 'sc_' + Date.now(), categoryId: categoryId, name: name, category_id: categoryId };
+  db.subcategories.push(newSc);
   saveDB();
+  pushSubcatToSupabase(newSc);
   showToast('Subcategory added!', 'success');
   openSubcategoryManager();
 }
@@ -2319,6 +2612,7 @@ function deleteSubcat(id) {
       db.subcategories = db.subcategories.filter(x => x.id !== id);
       db.tests.forEach(t => { if (t.subcategoryId === id) t.subcategoryId = ''; });
       saveDB();
+      deleteSubcatFromSupabase(id);
       showToast('Subcategory deleted', 'warn');
       openSubcategoryManager();
     }, 'danger');
@@ -3272,6 +3566,8 @@ function saveProfileInfo() {
   currentUser = db.users[idx];
   sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
   saveDB();
+  const sb2 = getSB();
+  if (sb2) sb2.from('users').upsert(userToRow(currentUser), {onConflict:'username'}).catch(()=>{});
   document.getElementById('userChipName').textContent = name.split(' ')[0];
   document.getElementById('userAv').textContent = name[0].toUpperCase();
   showToast('Profile updated successfully!', 'success');
