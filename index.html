@@ -1128,7 +1128,13 @@ function doSignup() {
   };
   db.users.push(newUser);
   saveDB();
-  pushUserToSupabase(newUser);
+  // Push to Supabase synchronously with feedback
+  const sb = getSB();
+  if (sb) {
+    sb.from('users').upsert(userToRow(newUser), {onConflict: 'username'})
+      .then(res => { if (res.error) console.warn('Signup push error:', res.error); })
+      .catch(e => console.warn('Signup push failed:', e));
+  }
   // Clear the form
   ['su_fullname','su_phone','su_email','su_pass','su_pass2'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
@@ -1255,7 +1261,21 @@ function goPage(p, skipHistory) {
   else if (p === 'leaderboard')    mc.innerHTML = renderLeaderboard();
   else if (p === 'admin')          mc.innerHTML = renderAdmin();
   else if (p === 'questions')      mc.innerHTML = renderQuestions();
-  else if (p === 'students-admin') mc.innerHTML = renderStudentsAdmin();
+  else if (p === 'students-admin') {
+    const _sb = getSB();
+    if (_sb) {
+      _sb.from('users').select('*').then(res => {
+        if (!res.error && res.data) {
+          const remoteUsers = res.data.map(rowToUser);
+          const admin = db.users.find(u => u.role === 'admin');
+          db.users = admin ? [admin, ...remoteUsers.filter(u => u.role !== 'admin')] : remoteUsers;
+          saveDB(); updatePendingBadge();
+        }
+        mc.innerHTML = renderStudentsAdmin();
+      }).catch(() => { mc.innerHTML = renderStudentsAdmin(); });
+    } else { mc.innerHTML = renderStudentsAdmin(); }
+    return;
+  }
   else if (p === 'profile')        mc.innerHTML = renderProfile();
   else if (p === 'student-profile') mc.innerHTML = renderStudentProfile();
 }
@@ -1729,6 +1749,7 @@ function submitExam() {
 
   db.results.push(result);
   try { saveDB(); } catch(e) { console.warn('Save failed', e); }
+  pushResultToSupabase(result);
 
   const examWrap = document.getElementById('examWrap');
   const resultWrap = document.getElementById('resultWrap');
@@ -2451,6 +2472,7 @@ function removeQFromTest(qId, testId) {
   if (idx<0) return;
   db.tests[idx].questions = db.tests[idx].questions.filter(id=>id!==qId);
   saveDB();
+  pushTestToSupabase(db.tests[idx]);
   openEditTestModal(testId); // re-open refreshed
   showToast('Question removed', 'warn');
 }
@@ -2539,6 +2561,7 @@ function saveEditQuestion(qId, testId) {
     image
   };
   saveDB();
+  pushQuestionsToSupabase([db.questions.find(q=>q.id===qId)].filter(Boolean));
   showToast('Question updated!', 'success');
   openEditTestModal(testId);
 }
@@ -2557,6 +2580,7 @@ function saveEditTest(id) {
     negMarking: parseFloat(gV('et_neg'))||0.5
   };
   saveDB(); closeModal(); goPage('admin');
+  pushTestToSupabase(updatedTest);
   showToast('Test updated!', 'success');
 }
 
@@ -2565,6 +2589,7 @@ function deleteTest(id) {
   db.tests = db.tests.filter(t=>t.id!==id);
   db.results = db.results.filter(r=>r.testId!==id);
   saveDB(); goPage('admin');
+  deleteTestFromSupabase(id);
   showToast('Test deleted', 'warn');
 }
 
@@ -2685,6 +2710,7 @@ function saveRenameSubcat(id) {
   const idx = db.subcategories.findIndex(x => x.id === id);
   if (idx >= 0) db.subcategories[idx].name = name;
   saveDB();
+  if (idx >= 0) pushSubcatToSupabase({...db.subcategories[idx], category_id: db.subcategories[idx].categoryId});
   showToast('Subcategory renamed!', 'success');
   openSubcategoryManager();
 }
@@ -2710,6 +2736,7 @@ function togglePublishTest(id) {
   if (idx<0) return;
   db.tests[idx].published = !db.tests[idx].published;
   saveDB(); goPage('admin');
+  pushTestToSupabase(db.tests[idx]);
   showToast(db.tests[idx].published ? 'Test published — students can now see it!' : 'Test hidden from students.', db.tests[idx].published ? 'success' : 'warn');
 }
 
@@ -2778,6 +2805,7 @@ function saveNewQ() {
   };
   db.questions.push(newQ);
   saveDB(); closeModal(); goPage('questions');
+  pushQuestionsToSupabase([newQ]);
   showToast('Question added!','success');
 }
 
@@ -2810,6 +2838,7 @@ function saveEditQ(id) {
     correct: parseInt(gV('eq_correct'))
   };
   saveDB(); closeModal(); goPage('questions');
+  pushQuestionsToSupabase([db.questions[idx]]);
   showToast('Question updated!','success');
 }
 
@@ -2818,6 +2847,7 @@ function deleteQ(id) {
   db.questions = db.questions.filter(q=>q.id!==id);
   db.tests.forEach(t => { t.questions = t.questions.filter(qid=>qid!==id); });
   saveDB(); goPage('questions');
+  const _sbdq = getSB(); if (_sbdq) _sbdq.from('questions').delete().eq('id', id).catch(()=>{});
   showToast('Question deleted','warn');
 }
 
@@ -2977,6 +3007,7 @@ function approveStudent(username) {
   db.users[idx].status = 'approved';
   db.users[idx].approvedOn = new Date().toLocaleDateString('en-IN');
   saveDB(); updatePendingBadge(); goPage('students-admin');
+  pushUserToSupabase(db.users[idx]);
   showToast('Student approved! They can now log in.', 'success');
 }
 
@@ -3001,6 +3032,7 @@ function approveAllPending() {
   const date = new Date().toLocaleDateString('en-IN');
   db.users.forEach(u => { if (u.role==='student'&&u.status==='pending') { u.status='approved'; u.approvedOn=date; } });
   saveDB(); updatePendingBadge(); goPage('students-admin');
+  db.users.filter(u=>u.role==='student').forEach(u=>pushUserToSupabase(u));
   showToast('All ' + pending.length + ' students approved!', 'success');
 }
 
@@ -3046,6 +3078,7 @@ function deleteStudent(username) {
     db.users = db.users.filter(x => x.username !== username);
     db.results = db.results.filter(r => r.username !== username);
     saveDB(); goPage('students-admin');
+    deleteUserFromSupabase(username);
     showToast('Student deleted.', 'warn');
   }, 'danger');
 }
@@ -3101,6 +3134,7 @@ function saveAddStudent() {
     assignedCategories
   });
   saveDB(); closeModal(); goPage('students-admin');
+  pushUserToSupabase(db.users[db.users.length-1]);
   showToast('Student added!', 'success');
 }
 
@@ -3177,6 +3211,7 @@ function saveEditStudent(username) {
     sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
   }
   saveDB(); closeModal(); goPage('students-admin');
+  pushUserToSupabase(db.users[idx]);
   const catNames = assignedCategories.join(', ') || 'None';
   showToast('Student updated! Categories: ' + catNames, 'success');
 }
@@ -3285,6 +3320,7 @@ function uploadStudentExcel(input) {
       }
 
       saveDB(); goPage('students-admin');
+  db.users.filter(u=>u.role==='student'&&u.source==='import').slice(-imported).forEach(u=>pushUserToSupabase(u));
       showToast(imported + ' students imported' + (skipped ? ', ' + skipped + ' skipped (duplicate/invalid)' : '') + '!', imported ? 'success' : 'warn');
     } catch(err) {
       showToast('Import failed: ' + err.message, 'error');
@@ -3354,6 +3390,8 @@ function restoreAllData(input) {
           if (!t.examCategory) t.examCategory = 'SSC';
         });
         saveDB();
+        // Push restored data to Supabase
+        pushAllToSupabase();
         // Reload session with fresh data
         const sess = sessionStorage.getItem('ssc_session');
         if (sess) {
