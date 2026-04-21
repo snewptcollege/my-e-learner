@@ -1322,18 +1322,8 @@ function goPage(p, skipHistory) {
   else if (p === 'admin')          mc.innerHTML = renderAdmin();
   else if (p === 'questions')      mc.innerHTML = renderQuestions();
   else if (p === 'students-admin') {
-    const _sb = getSB();
-    if (_sb) {
-      _sb.from('users').select('*').then(res => {
-        if (!res.error && res.data) {
-          const remoteUsers = res.data.map(rowToUser);
-          const admin = db.users.find(u => u.role === 'admin');
-          db.users = admin ? [admin, ...remoteUsers.filter(u => u.role !== 'admin')] : remoteUsers;
-          saveDB(); updatePendingBadge();
-        }
-        mc.innerHTML = renderStudentsAdmin();
-      }).catch(() => { mc.innerHTML = renderStudentsAdmin(); });
-    } else { mc.innerHTML = renderStudentsAdmin(); }
+    mc.innerHTML = renderStudentsAdmin();
+    updatePendingBadge();
     return;
   }
   else if (p === 'profile')        mc.innerHTML = renderProfile();
