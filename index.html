@@ -1190,12 +1190,16 @@ function doLogin() {
   showLoadingOverlay('Connecting...');
   syncFromSupabase().then(() => {
     hideLoadingOverlay();
-    // One-time: re-push all local subcategories to Supabase with correct column format
+    // Always re-push all subcategories on login to ensure Supabase has correct data
     if (db.subcategories && db.subcategories.length > 0) {
       db.subcategories.forEach(sc => {
         sbUpsert('subcategories', subcatToRow(sc));
       });
     }
+    // Also push all users to ensure assignedCategories are up to date
+    db.users.forEach(u => {
+      if (u.role === 'student') sbUpsert('users', userToRow(u));
+    });
     const user = db.users.find(x =>
       (x.username === raw || (x.email && x.email.toLowerCase() === raw)) &&
       x.password === p && x.role === loginTab
@@ -1599,7 +1603,14 @@ let testFilter = 'all';
 
 function renderTests() {
   const isAdmin = currentUser && currentUser.role === 'admin';
-  const allowedCats = currentUser.assignedCategories || [];
+  // Always get fresh assignedCategories from db (not stale currentUser object)
+  const _freshUser = db.users.find(u => u.username === currentUser.username) || currentUser;
+  const allowedCats = _freshUser.assignedCategories || [];
+  // Also update currentUser in memory if categories changed
+  if (_freshUser !== currentUser) {
+    currentUser.assignedCategories = _freshUser.assignedCategories;
+    currentUser.assignedSubcategories = _freshUser.assignedSubcategories;
+  }
   const visibleTests = isAdmin
     ? db.tests
     : db.tests.filter(t => t.published === true || t.published === 'true');
@@ -1647,7 +1658,7 @@ function renderTests() {
 
   function buildSection(cat, catTests) {
     const catLocked = !isAdmin && !allowedCats.includes(cat.id);
-    const allowedSubs = currentUser.assignedSubcategories || [];
+    const allowedSubs = (_freshUser || currentUser).assignedSubcategories || [];
     const subcats = (db.subcategories||[]).filter(sc => (sc.categoryId||sc.category_id) === cat.id);
     const badge = isAdmin ? '' : catLocked
       ? '<span style="font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-bg);padding:4px 12px;border-radius:9999px;border:1px solid var(--amber-light)">🔒 Locked</span>'
@@ -1708,7 +1719,11 @@ function startTest(testId) {
   if (!test) return;
   if (currentUser.role !== 'admin') {
     if (test.published !== true) { showToast('This test is not available.', 'error'); return; }
-    const allowed = currentUser.assignedCategories || [];
+    // Get fresh user data to ensure latest category assignments
+    const _su = db.users.find(u => u.username === currentUser.username) || currentUser;
+    currentUser.assignedCategories = _su.assignedCategories || [];
+    currentUser.assignedSubcategories = _su.assignedSubcategories || [];
+    const allowed = currentUser.assignedCategories;
     if (!allowed.includes(test.examCategory)) { showToast('You are not assigned to this exam category.', 'error'); return; }
     // Check subcategory lock
     const allowedSubs = currentUser.assignedSubcategories || [];
@@ -3376,10 +3391,14 @@ function saveAddStudent() {
 function openEditStudentModal(username) {
   const u = db.users.find(x=>x.username===username);
   if (!u) return;
-  const assigned = u.assignedCategories || [];
-  const assignedSubs = u.assignedSubcategories || [];
-  // Normalize subcategories to ensure categoryId is always set
-  const _normalizedSubcats = (db.subcategories||[]).map(normalizeSubcat);
+
+  // Fetch fresh subcategories from Supabase before opening modal
+  const _sb = getSB();
+  const _openModal = function() {
+    const assigned = u.assignedCategories || [];
+    const assignedSubs = u.assignedSubcategories || [];
+    // Normalize subcategories to ensure categoryId is always set
+    const _normalizedSubcats = (db.subcategories||[]).map(normalizeSubcat);
   const catHtml = EXAM_CATEGORIES.map(c => {
     const subcats = _normalizedSubcats.filter(sc=>sc.categoryId===c.id);
     const catChecked = assigned.includes(c.id);
@@ -3400,8 +3419,8 @@ function openEditStudentModal(username) {
       + subsHtml + '</div></div>';
   }).join('');
 
-  window._editStuUser = username;
-  showModal(
+    window._editStuUser = username;
+    showModal(
     '<div class="modal-hdr"><h3>Edit Student — '+u.name+'</h3><button class="close-btn" onclick="closeModal()">×</button></div>'
     + '<div class="form-grid">'
     + '<div class="fg"><label>Full Name</label><input id="es_name" value="'+u.name+'"></div>'
@@ -3415,7 +3434,22 @@ function openEditStudentModal(username) {
     + '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>'
     + '<button class="btn btn-primary" onclick="saveEditStudent(window._editStuUser)">Save Changes</button>'
     + '</div>'
-  );
+    );
+  }; // end _openModal
+
+  // Fetch fresh subcategories from Supabase
+  if (_sb) {
+    _sb.from('subcategories').select('*').then(res => {
+      if (!res.error && res.data && res.data.length > 0) {
+        const regular = res.data.filter(sc => sc.category_id !== '__EXAMCAT__');
+        db.subcategories = regular.map(normalizeSubcat);
+        try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
+      }
+      _openModal();
+    }).catch(() => _openModal());
+  } else {
+    _openModal();
+  }
 }
 
 function saveEditStudent(username) {
