@@ -1080,6 +1080,10 @@ function saveDB() {
   try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
   loadExamCategories();
   window._lastSaveTime = Date.now();
+  // Block background syncs for 10 seconds after any save
+  window._syncBlocked = true;
+  clearTimeout(window._syncBlockTimer);
+  window._syncBlockTimer = setTimeout(() => { window._syncBlocked = false; }, 10000);
 }
 
 // Full sync from Supabase — called on login
@@ -1332,8 +1336,30 @@ function goPage(p, skipHistory) {
   else if (p === 'admin')          mc.innerHTML = renderAdmin();
   else if (p === 'questions')      mc.innerHTML = renderQuestions();
   else if (p === 'students-admin') {
+    // Render immediately from local cache
     mc.innerHTML = renderStudentsAdmin();
     updatePendingBadge();
+    // Then fetch fresh data from Supabase in background (only if no recent save)
+    const _timeSinceSave = Date.now() - (window._lastSaveTime || 0);
+    if (_timeSinceSave > 5000 && !window._syncBlocked) {
+      const _sb2 = getSB();
+      if (_sb2) {
+        _sb2.from('users').select('*').then(res => {
+          if (!res.error && res.data && res.data.length > 0) {
+            const remoteUsers = res.data.map(rowToUser);
+            const admin = db.users.find(u => u.role === 'admin');
+            db.users = admin ? [admin, ...remoteUsers.filter(u => u.role !== 'admin')] : remoteUsers;
+            saveDB();
+            // Re-render with fresh data
+            const mc2 = document.getElementById('pageContent');
+            if (mc2 && window._currentPage === 'students-admin') {
+              mc2.innerHTML = renderStudentsAdmin();
+              updatePendingBadge();
+            }
+          }
+        }).catch(() => {});
+      }
+    }
     return;
   }
   else if (p === 'profile')        mc.innerHTML = renderProfile();
