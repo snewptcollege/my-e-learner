@@ -834,7 +834,11 @@ async function syncFromSupabase() {
       }
       // Push subcategories
       for (const sc of (localDb.subcategories||[])) {
-        try { await sb.from('subcategories').upsert({...sc, category_id: sc.categoryId||sc.category_id}, {onConflict:'id'}); } catch(e){}
+        try { await sb.from('subcategories').upsert({
+          id: sc.id,
+          category_id: sc.category_id || sc.categoryId,
+          name: sc.name
+        }, {onConflict:'id'}); } catch(e){}
       }
       console.log('Auto-push complete!');
       // Re-fetch after push
@@ -1009,7 +1013,12 @@ function pushResultToSupabase(result) {
 }
 
 function pushSubcatToSupabase(sc) {
-  sbUpsert('subcategories', sc);
+  // Only send columns that exist in Supabase table: id, category_id, name
+  sbUpsert('subcategories', {
+    id: sc.id,
+    category_id: sc.category_id || sc.categoryId,
+    name: sc.name
+  });
 }
 
 function deleteSubcatFromSupabase(id) {
@@ -1175,6 +1184,16 @@ function doLogin() {
   showLoadingOverlay('Connecting...');
   syncFromSupabase().then(() => {
     hideLoadingOverlay();
+    // One-time: re-push all local subcategories to Supabase with correct column format
+    if (db.subcategories && db.subcategories.length > 0) {
+      db.subcategories.forEach(sc => {
+        sbUpsert('subcategories', {
+          id: sc.id,
+          category_id: sc.category_id || sc.categoryId,
+          name: sc.name
+        });
+      });
+    }
     const user = db.users.find(x =>
       (x.username === raw || (x.email && x.email.toLowerCase() === raw)) &&
       x.password === p && x.role === loginTab
@@ -2764,7 +2783,11 @@ async function pushAllToSupabase() {
     }
     // Push subcategories
     for (const sc of (db.subcategories||[])) {
-      await sb.from('subcategories').upsert({...sc, category_id: sc.categoryId||sc.category_id}, {onConflict: 'id'});
+      await sb.from('subcategories').upsert({
+        id: sc.id,
+        category_id: sc.category_id || sc.categoryId,
+        name: sc.name
+      }, {onConflict: 'id'});
     }
     // Push custom exam categories as special records
     const defaultIds = DEFAULT_EXAM_CATEGORIES.map(c => c.id);
@@ -2974,7 +2997,7 @@ function saveRenameSubcat(id) {
   const idx = db.subcategories.findIndex(x => x.id === id);
   if (idx >= 0) db.subcategories[idx].name = name;
   saveDB();
-  if (idx >= 0) pushSubcatToSupabase({...db.subcategories[idx], category_id: db.subcategories[idx].categoryId});
+  if (idx >= 0) pushSubcatToSupabase(db.subcategories[idx]);
   showToast('Subcategory renamed!', 'success');
   openSubcategoryManager();
 }
