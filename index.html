@@ -3256,9 +3256,16 @@ function saveEditStudent(username) {
   }
   saveDB();
   pushUserToSupabase(db.users[idx]);
-  closeModal(); goPage('students-admin');
-  const catNames = assignedCategories.join(', ') || 'None';
-  showToast('Student updated! Categories: '+catNames, 'success');
+  closeModal();
+  // Auto-switch tab based on whether student now has categories
+  if (assignedCategories.length > 0) {
+    window._stuTab = 'active';
+    showToast('✅ Student moved to Active! Categories: '+assignedCategories.join(', '), 'success');
+  } else {
+    window._stuTab = 'pending';
+    showToast('Student updated — no categories assigned yet.', 'warn');
+  }
+  goPage('students-admin');
 }
 
 function openResetPwModal(username) {
