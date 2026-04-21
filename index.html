@@ -849,7 +849,7 @@ async function syncFromSupabase() {
       db.tests = (t2.data||[]).map(rowToTest);
       db.questions = (q2.data||[]).map(rowToQuestion);
       db.results = (r2.data||[]).map(rowToResult);
-      db.subcategories = s2.data||[];
+      db.subcategories = (s2.data||[]).map(sc => ({...sc, categoryId: sc.categoryId||sc.category_id}));
       localStorage.setItem(STORE, JSON.stringify(db));
       return true;
     }
@@ -859,7 +859,11 @@ async function syncFromSupabase() {
     const allSubcats = subcatsRes.data || [];
     const customCats = allSubcats.filter(sc => sc.category_id === '__EXAMCAT__');
     const regularSubcats = allSubcats.filter(sc => sc.category_id !== '__EXAMCAT__');
-    db.subcategories = regularSubcats;
+    // Map category_id (Supabase snake_case) -> categoryId (local camelCase)
+    db.subcategories = regularSubcats.map(sc => ({
+      ...sc,
+      categoryId: sc.categoryId || sc.category_id
+    }));
     if (customCats.length > 0) {
       const restoredCats = customCats.map(sc => {
         try { return JSON.parse(sc.name); } catch(e) { return null; }
@@ -914,7 +918,7 @@ async function syncFromSupabase() {
           for (const sc of localDb.subcategories) {
             await sb.from('subcategories').upsert({...sc, category_id: sc.categoryId||sc.category_id}, {onConflict:'id'});
           }
-          db.subcategories = localDb.subcategories;
+          db.subcategories = (localDb.subcategories||[]).map(sc => ({...sc, categoryId: sc.categoryId||sc.category_id}));
         }
         // Push custom exam categories
         if (localDb.examCategories) {
@@ -1073,6 +1077,8 @@ function loadDB() {
     const seedUsernames = ['student1','student2','student3','student4'];
     db.users = db.users.filter(u => !seedUsernames.includes(u.username));
     if (!db.subcategories) db.subcategories = [];
+    // Ensure all subcategories have both categoryId and category_id
+    db.subcategories = db.subcategories.map(sc => ({...sc, categoryId: sc.categoryId||sc.category_id, category_id: sc.category_id||sc.categoryId}));
     if (!db.examCategories || db.examCategories.length === 0) db.examCategories = [...DEFAULT_EXAM_CATEGORIES];
     if (!db.examCategories || db.examCategories.length === 0) db.examCategories = [...DEFAULT_EXAM_CATEGORIES];
     const adminIdx = db.users.findIndex(u => u.role === 'admin');
@@ -2924,7 +2930,7 @@ function saveSubcategory(categoryId) {
   const name = (document.getElementById('sc_name')?.value || '').trim();
   if (!name) { showToast('Name is required', 'error'); return; }
   if (!db.subcategories) db.subcategories = [];
-  const newSc = { id: 'sc_' + Date.now(), categoryId: categoryId, name: name, category_id: categoryId };
+  const newSc = { id: 'sc_' + Date.now(), categoryId: categoryId, category_id: categoryId, name: name };
   db.subcategories.push(newSc);
   saveDB();
   pushSubcatToSupabase(newSc);
