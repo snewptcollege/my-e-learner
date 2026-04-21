@@ -943,7 +943,16 @@ async function syncFromSupabase() {
       }
     }
 
-    db.users = remoteUsers;
+    // Merge: prefer local data for recently saved users (within 30 seconds)
+    const recentlySaved = (window._lastSaveTime && (Date.now() - window._lastSaveTime) < 30000);
+    if (recentlySaved) {
+      // Keep local db.users as-is, only add new users from Supabase not in local
+      const localUsernames = new Set(db.users.map(u => u.username));
+      const newRemoteUsers = remoteUsers.filter(u => !localUsernames.has(u.username));
+      db.users = [...db.users, ...newRemoteUsers];
+    } else {
+      db.users = remoteUsers;
+    }
     // Save to localStorage as cache
     localStorage.setItem(STORE, JSON.stringify(db));
     loadExamCategories();
@@ -1070,6 +1079,7 @@ function loadDB() {
 function saveDB() {
   try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
   loadExamCategories();
+  window._lastSaveTime = Date.now();
 }
 
 // Full sync from Supabase — called on login
@@ -3757,8 +3767,18 @@ setInterval(function() {
 // Sync when user returns to the tab (visibility change)
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && currentUser) {
+    // Don't sync if a save happened in the last 10 seconds (let XHR complete first)
+    const timeSinceLastSave = Date.now() - (window._lastSaveTime || 0);
+    if (timeSinceLastSave < 10000) return;
     syncFromSupabase().then(() => {
-      if (currentUser) updatePendingBadge();
+      if (currentUser) {
+        updatePendingBadge();
+        // Re-render students page if open
+        if (window._currentPage === 'students-admin') {
+          const mc = document.getElementById('pageContent');
+          if (mc) mc.innerHTML = renderStudentsAdmin();
+        }
+      }
     }).catch(() => {});
   }
 });
