@@ -1014,34 +1014,17 @@ async function syncFromSupabase() {
     // MERGE STRATEGY:
     // For each remote user: if recently saved locally (_syncBlocked), keep local version
     // Otherwise trust Supabase (it has the latest data from any computer)
-    // SAFE MERGE: Never lose category assignments
-    // Rule: always keep the user version that has MORE categories assigned
-    // This prevents race conditions where Supabase hasn't received the XHR yet
-    const localUsernames = new Set(db.users.map(u => u.username));
-    const newRemoteUsers = remoteUsers.filter(u => !localUsernames.has(u.username));
-    
-    db.users = db.users.map(localU => {
-      const remoteU = remoteUsers.find(r => r.username === localU.username);
-      if (!remoteU) return localU; // not in Supabase yet, keep local
-      
-      const localCats = (localU.assignedCategories || []).length;
-      const remoteCats = (remoteU.assignedCategories || []).length;
-      const localSubs = (localU.assignedSubcategories || []).length;
-      const remoteSubs = (remoteU.assignedSubcategories || []).length;
-      
-      // If local has MORE categories → local is newer (XHR not yet in Supabase)
-      if (localCats > remoteCats) return localU;
-      // If remote has MORE categories → admin assigned from another computer
-      if (remoteCats > localCats) return remoteU;
-      // Same category count - check subcategories
-      if (localSubs > remoteSubs) return localU;
-      if (remoteSubs > localSubs) return remoteU;
-      // Same - use remote (has latest other field changes)
-      return remoteU;
-    });
-    
-    // Add users that exist in Supabase but not locally
-    db.users = [...db.users, ...newRemoteUsers];
+    // MERGE: If we saved recently (_syncBlocked), keep local data
+    // Otherwise trust Supabase as the source of truth
+    if (window._syncBlocked) {
+      // Keep local users, only add NEW users from Supabase
+      const localUsernames = new Set(db.users.map(u => u.username));
+      const newRemoteUsers = remoteUsers.filter(u => !localUsernames.has(u.username));
+      db.users = [...db.users, ...newRemoteUsers];
+    } else {
+      // Trust Supabase completely - it has the latest state
+      db.users = remoteUsers;
+    }
 
     // For tests/questions/results: always take the union (never lose data)
     const remoteTst = (testsRes.data||[]).map(rowToTest);
@@ -1133,7 +1116,14 @@ async function pushAllToSupabase() {
 //   SUPABASE PUSH/DELETE HELPERS
 // ═══════════════════════════════════════
 async function pushUserToSupabase(user) {
-  sbUpsert('users', userToRow(user));
+  const row = userToRow(user);
+  // Also directly update via REST to ensure immediate persistence
+  return sbUpsert('users', row).then(function(res) {
+    if (!res || !res.ok) {
+      // Retry once on failure
+      setTimeout(function() { sbUpsert('users', row); }, 2000);
+    }
+  });
 }
 
 function deleteUserFromSupabase(username) {
@@ -1699,6 +1689,11 @@ function saveEditStudent(username) {
   }
   saveDB();
   pushUserToSupabase(db.users[idx]);
+  // Extend sync block to 90s to ensure XHR reaches Supabase before next sync
+  window._syncBlocked = true;
+  clearTimeout(window._syncBlockTimer);
+  window._syncBlockTimer = setTimeout(function() { window._syncBlocked = false; }, 90000);
+  try { localStorage.setItem('myelearner_last_save', String(Date.now())); } catch(e) {}
   closeModal();
   // Auto-switch tab based on whether student now has categories
   if (assignedCategories.length > 0) {
@@ -1751,7 +1746,12 @@ function deleteStudent(username) {
     deleteUserFromSupabase(username);
     db.users = db.users.filter(x=>x.username!==username);
     db.results = db.results.filter(r=>r.username!==username);
-    saveDB(); goPage('students-admin');
+    saveDB();
+    window._syncBlocked = true;
+    clearTimeout(window._syncBlockTimer);
+    window._syncBlockTimer = setTimeout(function() { window._syncBlocked = false; }, 90000);
+    try { localStorage.setItem('myelearner_last_save', String(Date.now())); } catch(e) {}
+    goPage('students-admin');
     showToast('Student deleted.', 'warn');
   }, 'danger');
 }
@@ -2165,7 +2165,13 @@ function toggleSuspend(username) {
     db.users[i].suspended = !db.users[i].suspended;
     const done = db.users[i].suspended ? 'suspended' : 'restored';
     saveDB();
+    // Push and extend sync block until confirmed
     pushUserToSupabase(db.users[i]);
+    // Re-extend syncBlocked to 90s to ensure XHR completes before next sync
+    window._syncBlocked = true;
+    clearTimeout(window._syncBlockTimer);
+    window._syncBlockTimer = setTimeout(function() { window._syncBlocked = false; }, 90000);
+    try { localStorage.setItem('myelearner_last_save', String(Date.now())); } catch(e) {}
     goPage('students-admin');
     showToast('Account '+done+' for '+db.users[i].name, db.users[i].suspended?'warn':'success');
   }, u.suspended?'warn':'danger');
