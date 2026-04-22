@@ -649,7 +649,9 @@ function sbRequest(method, table, data, filter) {
 
 function sbUpsert(table, data) {
   const payload = Array.isArray(data) ? data : [data];
-  return sbRequest('POST', table, payload, null);
+  // Specify conflict resolution column per table for proper UPSERT behavior
+  const conflictCol = table === 'users' ? 'username' : 'id';
+  return sbRequest('POST', table, payload, 'on_conflict=' + conflictCol);
 }
 
 function sbDelete(table, field, value) {
