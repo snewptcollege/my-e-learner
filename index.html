@@ -2182,6 +2182,141 @@ function updatePendingBadge() {
 //   RECOVERED FUNCTIONS
 // ═══════════════════════════════════════
 
+function doLogin() {
+  const raw = (document.getElementById('loginUser').value || '').trim().toLowerCase();
+  const p   = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginErr');
+  err.style.display = 'none';
+  if (!raw || !p) { err.textContent = 'Please enter email and password.'; err.style.display = 'block'; return; }
+
+  showLoadingOverlay('Signing in...');
+
+  // Try to sync from Supabase first, but don't block login if it fails
+  syncFromSupabase().then(function() {
+    hideLoadingOverlay();
+    attemptLogin(raw, p, err);
+  }).catch(function() {
+    hideLoadingOverlay();
+    attemptLogin(raw, p, err);
+  });
+}
+
+function attemptLogin(raw, p, err) {
+  const user = db.users.find(x =>
+    (x.username === raw || (x.email && x.email.toLowerCase() === raw)) &&
+    x.password === p && x.role === loginTab
+  );
+  if (!user) {
+    err.textContent = 'Invalid email/username or password.';
+    err.style.display = 'block'; return;
+  }
+  if (user.suspended) {
+    err.textContent = 'Your account has been suspended. Contact the admin.';
+    err.style.display = 'block'; return;
+  }
+  if (user.status === 'rejected') {
+    err.textContent = 'Your account has been rejected. Contact admin.';
+    err.style.display = 'block'; return;
+  }
+
+  const sb = getSB();
+  const finishLogin = function(finalUser) {
+    currentUser = finalUser;
+    sessionStorage.setItem('ssc_session', JSON.stringify(finalUser));
+    document.getElementById('loginWrap').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('userChipName').textContent = finalUser.name.split(' ')[0];
+    document.getElementById('userAv').textContent = finalUser.name[0].toUpperCase();
+    if (finalUser.role === 'admin') showAdminUI(); else showStudentUI();
+    updatePendingBadge();
+    goPage('home');
+  };
+
+  // For students: fetch latest data directly from Supabase to get fresh assignedCategories
+  if (user.role === 'student' && sb) {
+    sb.from('users').select('*').eq('username', user.username).then(function(res) {
+      if (!res.error && res.data && res.data.length > 0) {
+        const freshUser = rowToUser(res.data[0]);
+        const idx = db.users.findIndex(u => u.username === user.username);
+        if (idx >= 0) db.users[idx] = freshUser;
+        try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
+        finishLogin(freshUser);
+      } else {
+        finishLogin(user);
+      }
+    }).catch(function() { finishLogin(user); });
+  } else {
+    finishLogin(db.users.find(u => u.username === user.username) || user);
+  }
+}
+
+function doSignup() {
+  const name  = (document.getElementById('su_fullname').value || '').trim();
+  const phone = (document.getElementById('su_phone').value || '').trim();
+  const email = (document.getElementById('su_email').value || '').trim().toLowerCase();
+  const pass  = document.getElementById('su_pass').value;
+  const pass2 = document.getElementById('su_pass2').value;
+  const err   = document.getElementById('signupErr');
+  err.style.display = 'none';
+  if (!name || !phone || !email || !pass || !pass2) {
+    err.textContent = 'All fields are required.'; err.style.display = 'block'; return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    err.textContent = 'Please enter a valid email address.'; err.style.display = 'block'; return;
+  }
+  if (!/^[0-9]{10}$/.test(phone)) {
+    err.textContent = 'Phone must be exactly 10 digits.'; err.style.display = 'block'; return;
+  }
+  if (pass.length < 6) {
+    err.textContent = 'Password must be at least 6 characters.'; err.style.display = 'block'; return;
+  }
+  if (pass !== pass2) {
+    err.textContent = 'Passwords do not match.'; err.style.display = 'block'; return;
+  }
+  if (db.users.find(u => u.email && u.email.toLowerCase() === email)) {
+    err.textContent = 'This email is already registered. Please sign in.'; err.style.display = 'block'; return;
+  }
+  const newUser = {
+    username: email, email, phone, name, password: pass,
+    role: 'student', suspended: false,
+    status: 'pending',
+    assignedCategories: [],
+    assignedSubcategories: [],
+    registeredOn: new Date().toLocaleDateString('en-IN'),
+    registeredAt: new Date().toISOString(),
+    source: 'self'
+  };
+  db.users.push(newUser);
+  saveDB();
+  // Push to Supabase
+  pushUserToSupabase(newUser);
+  // Clear the form
+  ['su_fullname','su_phone','su_email','su_pass','su_pass2'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  // Switch to sign-in and show success message there
+  switchAuthMode('signin');
+  const le = document.getElementById('loginErr');
+  if (le) {
+    le.style.color = 'var(--green)';
+    le.textContent = '✓ Registration successful! You can now sign in.';
+    le.style.display = 'block';
+  }
+  showToast('Registration successful! You can now sign in.', 'success');
+}
+
+
+function doLogout() {
+  sessionStorage.removeItem('ssc_session');
+  currentUser = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('loginPass').value = '';
+  document.getElementById('loginErr').style.display = 'none';
+  switchAuthMode('signin');
+}
+
+
 function checkSession() {
   const raw = sessionStorage.getItem('ssc_session');
   if (!raw) return;
