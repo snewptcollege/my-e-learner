@@ -614,7 +614,7 @@ const STORE = 'myelearner_sachdeva_v1'; // Fixed key - never change this
 //   SUPABASE CONFIG
 // ═══════════════════════════════════════
 const SUPABASE_URL = 'https://scizvxcrwpqqawyoyzwr.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_tptmCB820gIv50c3GB0PGg_LdVbSVQZ';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjaXp2eGNyd3BxcWF3eW95endyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MDM2OTcsImV4cCI6MjA5MjA3OTY5N30.nC_GxuPjbTSyRkBvlbMUycPcZXUDaYxrnElcKRpK56w';
 let _sb = null;
 
 function getSB() {
@@ -640,8 +640,13 @@ function sbRequest(method, table, data, filter) {
       xhr.setRequestHeader('apikey', SUPABASE_KEY);
       xhr.setRequestHeader('Authorization', 'Bearer ' + SUPABASE_KEY);
       xhr.setRequestHeader('Prefer', 'resolution=merge-duplicates,return=minimal');
-      xhr.onload = () => resolve({ ok: xhr.status < 300 });
-      xhr.onerror = () => resolve({ ok: false });
+      xhr.onload = () => {
+        if (xhr.status >= 300) {
+          console.warn('[Supabase]', method, table, 'HTTP', xhr.status, xhr.responseText.substring(0,200));
+        }
+        resolve({ ok: xhr.status < 300, status: xhr.status });
+      };
+      xhr.onerror = () => { console.warn('[Supabase] Network error:', method, table); resolve({ ok: false }); };
       xhr.send(data ? JSON.stringify(data) : null);
     } catch(e) { resolve({ ok: false }); }
   });
@@ -671,7 +676,14 @@ function sbSelect(table, filter) {
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.onload = function() {
         if (xhr.status < 300) {
-          try { resolve({ data: JSON.parse(xhr.responseText), error: null }); }
+          try { 
+            const parsed = JSON.parse(xhr.responseText);
+            console.log('[Supabase] GET', table, filter||'', '→', parsed.length, 'rows');
+            if (parsed.length && parsed[0].username) {
+              parsed.forEach(u => console.log('  user:', u.username, 'cats:', u.assigned_categories, 'suspended:', u.suspended));
+            }
+            resolve({ data: parsed, error: null }); 
+          }
           catch(e) { resolve({ data: [], error: e }); }
         } else {
           resolve({ data: [], error: { message: xhr.statusText } });
@@ -1025,6 +1037,8 @@ async function syncFromSupabase() {
       db.users = [...db.users, ...newRemoteUsers];
     } else {
       // Trust Supabase completely - it has the latest state
+      console.log('[Sync] Trusting Supabase -', remoteUsers.length, 'users');
+      remoteUsers.forEach(u => console.log('  ', u.username, 'cats:', u.assignedCategories, 'suspended:', u.suspended));
       db.users = remoteUsers;
     }
 
