@@ -2184,147 +2184,71 @@ function updatePendingBadge() {
 
 function checkSession() {
   const raw = sessionStorage.getItem('ssc_session');
-  if (raw) {
-    const saved = JSON.parse(raw);
-    showLoadingOverlay('Loading your account...');
-    syncFromSupabase().then(() => {
-      hideLoadingOverlay();
-      const fresh = db.users.find(u => u.username === saved.username && u.password === saved.password);
-      if (!fresh || fresh.suspended) { sessionStorage.removeItem('ssc_session'); return; }
-      currentUser = fresh;
-      sessionStorage.setItem('ssc_session', JSON.stringify(fresh));
-      document.getElementById('loginWrap').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      document.getElementById('userChipName').textContent = currentUser.name.split(' ')[0];
-      document.getElementById('userAv').textContent = currentUser.name[0].toUpperCase();
-      if (currentUser.role === 'admin') showAdminUI(); else showStudentUI();
-      updatePendingBadge();
-      goPage('home');
-    }).catch(() => {
-      hideLoadingOverlay();
-      const fresh = db.users.find(u => u.username === saved.username && u.password === saved.password);
-      if (!fresh || fresh.suspended) { sessionStorage.removeItem('ssc_session'); return; }
-      currentUser = fresh;
-      sessionStorage.setItem('ssc_session', JSON.stringify(fresh));
-      document.getElementById('loginWrap').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      document.getElementById('userChipName').textContent = currentUser.name.split(' ')[0];
-      document.getElementById('userAv').textContent = currentUser.name[0].toUpperCase();
-      if (currentUser.role === 'admin') showAdminUI(); else showStudentUI();
-      updatePendingBadge();
-      goPage('home');
-    });
-  }
-}
+  if (!raw) return;
 
-function doLogin() {
-  const raw = (document.getElementById('loginUser').value || '').trim().toLowerCase();
-  const p   = document.getElementById('loginPass').value;
-  const err = document.getElementById('loginErr');
-  err.style.display = 'none';
+  const saved = JSON.parse(raw);
+  showLoadingOverlay('Loading your account...');
 
-  // First sync from Supabase to get latest data
-  showLoadingOverlay('Connecting...');
   syncFromSupabase().then(() => {
     hideLoadingOverlay();
-    // Push subcategories to Supabase on login to fix any missing data
-    if (db.subcategories && db.subcategories.length > 0) {
-      db.subcategories.forEach(sc => { try { sbUpsert('subcategories', subcatToRow(sc)); } catch(e){} });
-    }
-    // Push all students to ensure assignedCategories are synced
-    db.users.forEach(u => { if (u.role === 'student') { try { sbUpsert('users', userToRow(u)); } catch(e){} } });
-    const user = db.users.find(x =>
-      (x.username === raw || (x.email && x.email.toLowerCase() === raw)) &&
-      x.password === p && x.role === loginTab
-    );
-    if (user) {
-      if (user.suspended) {
-        err.textContent = 'Your account has been suspended. Contact the admin.';
-        err.style.display = 'block'; return;
+
+    const sb = getSB();
+    const continueSession = function(freshUser) {
+      if (!freshUser || freshUser.suspended) {
+        sessionStorage.removeItem('ssc_session');
+        return;
       }
-      if (user.status === 'rejected') {
-        err.textContent = 'Your account has been rejected. Contact admin for help.';
-        err.style.display = 'block'; return;
-      }
-      currentUser = db.users.find(u => u.username === user.username) || user;
-      sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
+      currentUser = freshUser;
+      sessionStorage.setItem('ssc_session', JSON.stringify(freshUser));
       document.getElementById('loginWrap').style.display = 'none';
       document.getElementById('app').style.display = 'block';
-      document.getElementById('userChipName').textContent = user.name.split(' ')[0];
-      document.getElementById('userAv').textContent = user.name[0].toUpperCase();
-      if (user.role === 'admin') showAdminUI(); else showStudentUI();
+      document.getElementById('userChipName').textContent = freshUser.name.split(' ')[0];
+      document.getElementById('userAv').textContent = freshUser.name[0].toUpperCase();
+      if (freshUser.role === 'admin') showAdminUI(); else showStudentUI();
       updatePendingBadge();
       goPage('home');
+    };
+
+    if (saved.role === 'student' && sb) {
+      // For students: ALWAYS fetch latest data from Supabase directly
+      sb.from('users').select('*').eq('username', saved.username).then(res => {
+        if (!res.error && res.data && res.data.length > 0) {
+          const freshUser = rowToUser(res.data[0]);
+          if (freshUser.password !== saved.password) {
+            sessionStorage.removeItem('ssc_session'); 
+            hideLoadingOverlay();
+            return;
+          }
+          const idx = db.users.findIndex(u => u.username === saved.username);
+          if (idx >= 0) db.users[idx] = freshUser;
+          try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
+          continueSession(freshUser);
+        } else {
+          const localUser = db.users.find(u => u.username === saved.username && u.password === saved.password);
+          continueSession(localUser || null);
+        }
+      }).catch(() => {
+        const localUser = db.users.find(u => u.username === saved.username && u.password === saved.password);
+        continueSession(localUser || null);
+      });
     } else {
-      err.textContent = 'Invalid email/username or password.';
-      err.style.display = 'block';
+      const localUser = db.users.find(u => u.username === saved.username && u.password === saved.password);
+      continueSession(localUser || null);
     }
+  }).catch(() => {
+    hideLoadingOverlay();
+    // Fallback to local db
+    const localUser = db.users.find(u => u.username === saved.username && u.password === saved.password);
+    if (!localUser || localUser.suspended) { sessionStorage.removeItem('ssc_session'); return; }
+    currentUser = localUser;
+    document.getElementById('loginWrap').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('userChipName').textContent = localUser.name.split(' ')[0];
+    document.getElementById('userAv').textContent = localUser.name[0].toUpperCase();
+    if (localUser.role === 'admin') showAdminUI(); else showStudentUI();
+    updatePendingBadge();
+    goPage('home');
   });
-}
-
-function doLogout() {
-  sessionStorage.removeItem('ssc_session');
-  currentUser = null;
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('loginWrap').style.display = 'flex';
-  document.getElementById('loginPass').value = '';
-  document.getElementById('loginErr').style.display = 'none';
-  switchAuthMode('signin');
-}
-
-function doSignup() {
-  const name  = (document.getElementById('su_fullname').value || '').trim();
-  const phone = (document.getElementById('su_phone').value || '').trim();
-  const email = (document.getElementById('su_email').value || '').trim().toLowerCase();
-  const pass  = document.getElementById('su_pass').value;
-  const pass2 = document.getElementById('su_pass2').value;
-  const err   = document.getElementById('signupErr');
-  err.style.display = 'none';
-  if (!name || !phone || !email || !pass || !pass2) {
-    err.textContent = 'All fields are required.'; err.style.display = 'block'; return;
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    err.textContent = 'Please enter a valid email address.'; err.style.display = 'block'; return;
-  }
-  if (!/^[0-9]{10}$/.test(phone)) {
-    err.textContent = 'Phone must be exactly 10 digits.'; err.style.display = 'block'; return;
-  }
-  if (pass.length < 6) {
-    err.textContent = 'Password must be at least 6 characters.'; err.style.display = 'block'; return;
-  }
-  if (pass !== pass2) {
-    err.textContent = 'Passwords do not match.'; err.style.display = 'block'; return;
-  }
-  if (db.users.find(u => u.email && u.email.toLowerCase() === email)) {
-    err.textContent = 'This email is already registered. Please sign in.'; err.style.display = 'block'; return;
-  }
-  const newUser = {
-    username: email, email, phone, name, password: pass,
-    role: 'student', suspended: false,
-    status: 'pending',
-    assignedCategories: [],
-    assignedSubcategories: [],
-    registeredOn: new Date().toLocaleDateString('en-IN'),
-    registeredAt: new Date().toISOString(),
-    source: 'self'
-  };
-  db.users.push(newUser);
-  saveDB();
-  // Push to Supabase
-  pushUserToSupabase(newUser);
-  // Clear the form
-  ['su_fullname','su_phone','su_email','su_pass','su_pass2'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
-  // Switch to sign-in and show success message there
-  switchAuthMode('signin');
-  const le = document.getElementById('loginErr');
-  if (le) {
-    le.style.color = 'var(--green)';
-    le.textContent = '✓ Registration successful! You can now sign in.';
-    le.style.display = 'block';
-  }
-  showToast('Registration successful! You can now sign in.', 'success');
 }
 
 function showAdminUI() {
