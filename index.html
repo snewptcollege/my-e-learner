@@ -851,6 +851,11 @@ let currentPage = 'home';
 let loginTab = 'student';
 let examState = null;
 let timerInterval = null;
+let pageHistory = [];
+let testFilter = 'all';
+let lbTestFilter = 'all';
+let authMode = 'signin';
+let toastT;
 
 function loadDB() {
   const raw = localStorage.getItem(STORE);
