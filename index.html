@@ -1412,7 +1412,7 @@ function openAddQModal() {
     <div class="form-grid">
       <div class="fg"><label>Subject</label><select id="q_sub">${SUBJECTS.map(s=>'<option value="'+s.id+'">'+s.label+'</option>').join('')}</select></div>
       <div class="fg"><label>Correct Answer</label><select id="q_correct"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select></div>
-      <div class="fg fg-full"><label>Question Text</label><textarea id="q_text" rows="3" placeholder="Enter the question..."></textarea></div>
+      <div class="fg fg-full"><label>Question Text</label>${buildFormatToolbar('q_text_editor')}</div>
       <div class="fg"><label>Option A</label><input id="q_oa" placeholder="Option A"></div>
       <div class="fg"><label>Option B</label><input id="q_ob" placeholder="Option B"></div>
       <div class="fg"><label>Option C</label><input id="q_oc" placeholder="Option C"></div>
@@ -1423,6 +1423,52 @@ function openAddQModal() {
       <button class="btn btn-primary" onclick="saveNewQ()">Add Question</button>
     </div>`);
 }
+
+
+function buildFormatToolbar(targetId) {
+  return '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;background:var(--surface);border:1.5px solid var(--border2);border-bottom:none;border-radius:var(--radius) var(--radius) 0 0">' +
+    ['<b>B</b>','<i>I</i>','<u>U</u>','<s>S</s>','X<sup style=\'font-size:9px\'>2</sup>','X<sub style=\'font-size:9px\'>2</sub>'].map((icon, i) => {
+      const cmds = ['bold','italic','underline','strikethrough','superscript','subscript'];
+      const tips = ['Bold','Italic','Underline','Strikethrough','Superscript','Subscript'];
+      return '<button type="button" title="'+tips[i]+'" onclick="applyFmt(\''+cmds[i]+'\',\''+targetId+'\')" style="min-width:28px;height:26px;padding:0 6px;border:1.5px solid var(--border2);border-radius:4px;background:var(--bg);cursor:pointer;font-size:13px;font-family:inherit;color:var(--text1)">'+icon+'</button>';
+    }).join('') +
+    '<div style="width:1px;background:var(--border2);margin:0 2px"></div>' +
+    '<button type="button" title="Clear Formatting" onclick="applyFmt(\'removeFormat\',\''+targetId+'\')" style="min-width:28px;height:26px;padding:0 6px;border:1.5px solid var(--border2);border-radius:4px;background:var(--bg);cursor:pointer;font-size:11px;color:var(--text2)">✕</button>' +
+  '</div>' +
+  '<div id="'+targetId+'" contenteditable="true" data-placeholder="Write your question here..." ' +
+    'style="width:100%;min-height:80px;padding:10px 12px;border:1.5px solid var(--border2);border-top:none;border-radius:0 0 var(--radius) var(--radius);font-size:13px;font-family:inherit;background:var(--surface);color:var(--text1);outline:none;resize:vertical;overflow-y:auto;box-sizing:border-box" ' +
+    'oninput="syncQText(\''+targetId+'\')">' +
+  '</div>' +
+  '<input type="hidden" id="'+targetId+'_val">';
+}
+
+function applyFmt(cmd, targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.focus();
+  document.execCommand(cmd, false, null);
+  syncQText(targetId);
+}
+
+function syncQText(targetId) {
+  const el = document.getElementById(targetId);
+  const inp = document.getElementById(targetId + '_val');
+  if (el && inp) inp.value = el.innerHTML;
+}
+
+function getQText(targetId) {
+  const inp = document.getElementById(targetId + '_val');
+  const el = document.getElementById(targetId);
+  return (inp && inp.value) || (el && el.innerHTML) || '';
+}
+
+function setQText(targetId, html) {
+  const el = document.getElementById(targetId);
+  const inp = document.getElementById(targetId + '_val');
+  if (el) el.innerHTML = html || '';
+  if (inp) inp.value = html || '';
+}
+
 
 function saveNewQ() {
   const text = gV('q_text'), oa=gV('q_oa'), ob=gV('q_ob'), oc=gV('q_oc'), od=gV('q_od');
@@ -1447,7 +1493,7 @@ function openEditQModal(id) {
     <div class="form-grid">
       <div class="fg"><label>Subject</label><select id="eq_sub">${SUBJECTS.map(s=>'<option value="'+s.id+'" '+(q.subject===s.id?'selected':'')+'>'+s.label+'</option>').join('')}</select></div>
       <div class="fg"><label>Correct Answer</label><select id="eq_correct">${['A','B','C','D'].map((l,i)=>'<option value="'+i+'" '+(q.correct===i?'selected':'')+'>'+l+'</option>').join('')}</select></div>
-      <div class="fg fg-full"><label>Question Text</label><textarea id="eq_text" rows="3">${q.text}</textarea></div>
+      <div class="fg fg-full"><label>Question Text</label>${buildFormatToolbar('eq_text_editor')}</div>
       <div class="fg"><label>Option A</label><input id="eq_oa" value="${q.options[0]}"></div>
       <div class="fg"><label>Option B</label><input id="eq_ob" value="${q.options[1]}"></div>
       <div class="fg"><label>Option C</label><input id="eq_oc" value="${q.options[2]}"></div>
@@ -3137,7 +3183,7 @@ function openAddTestModal() {
           <!-- Question text -->
           <div class="fg fg-full" style="margin-bottom:10px">
             <label>Question Text <span style="color:var(--red)">*</span></label>
-            <textarea id="nq_text" rows="3" placeholder="Write your question here..." style="width:100%;resize:vertical"></textarea>
+            <div id="nq_text_toolbar_wrap">${buildFormatToolbar('nq_text_editor')}</div>
           </div>
 
           <!-- Image upload -->
@@ -3287,7 +3333,15 @@ function openEditTestModal(id) {
 
           <div class="fg fg-full" style="margin-bottom:10px">
             <label>Question Text <span style="color:var(--red)">*</span></label>
-            <textarea id="eq_new_text" rows="3" placeholder="Write your question here..." style="width:100%;resize:vertical"></textarea>
+            <div id="eq_new_text_toolbar_wrap">${buildFormatToolbar('eq_new_text_editor')}</div>
+          </div>
+
+          <div class="fg fg-full" style="margin-bottom:12px">
+            <label>Question Image <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+            <div style="border:1.5px dashed var(--border2);border-radius:var(--radius);padding:10px 12px;background:var(--surface)">
+              <input type="file" accept="image/*" id="eq_new_img_input" onchange="previewEditQImg(this)">
+            </div>
+            <div id="eq_new_img_preview" style="margin-top:8px"></div>
           </div>
 
           <div class="fg fg-full" style="margin-bottom:12px">
@@ -3332,8 +3386,28 @@ function toggleEditCustomSubject(sel) {
   }
 }
 
+
+function previewEditQImg(input) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    window._editQImg = e.target.result;
+    const preview = document.getElementById('eq_new_img_preview');
+    if (preview) preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:180px;border-radius:var(--radius);border:1.5px solid var(--border2)">';
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function clearEditQImg() {
+  window._editQImg = null;
+  const preview = document.getElementById('eq_new_img_preview');
+  if (preview) preview.innerHTML = '';
+  const input = document.getElementById('eq_new_img_input');
+  if (input) input.value = '';
+}
+
 function addQuestionToEditTest(testId) {
-  const text = (document.getElementById('eq_new_text')?.value || '').trim();
+  const text = getQText('eq_new_text_editor').trim();
   const opts = [0,1,2,3,4].map(i => (document.getElementById('eq_new_opt'+i)?.value || '').trim());
   const correctRadio = document.querySelector('input[name="eq_new_correct"]:checked');
   const subSel = document.getElementById('eq_new_subject');
@@ -3350,8 +3424,10 @@ function addQuestionToEditTest(testId) {
   const correct = parseInt(correctRadio.value);
   const newQ = {
     id: Math.max(0, ...db.questions.map(q=>q.id)) + 1,
-    subject, text, options: opts, correct, explanation, image: null
+    subject, text, options: opts, correct, explanation,
+    image: window._editQImg || null
   };
+  window._editQImg = null; // reset after use
 
   // Add to question bank
   db.questions.push(newQ);
@@ -3521,7 +3597,7 @@ function addQuestionToNewTest() {
   window._newTestQuestions.push(q);
 
   // Clear form
-  document.getElementById('nq_text').value = '';
+  setQText('nq_text_editor', '');
   document.getElementById('nq_explanation').value = '';
   [0,1,2,3,4].forEach(i => { document.getElementById('nq_opt'+i).value = ''; });
   document.querySelectorAll('input[name="nq_correct"]').forEach(r => r.checked = false);
@@ -3730,7 +3806,7 @@ function openEditQuestionInline(qId, testId) {
     <div class="modal-hdr"><h3>Edit Question</h3><button class="close-btn" onclick="openEditTestModal(${testId})">×</button></div>
     <div class="form-grid" style="max-height:75vh;overflow-y:auto;padding-right:4px">
       <div class="fg fg-full"><label>Question Text</label>
-        <textarea id="eq_text" rows="3" style="width:100%;padding:10px;border:1.5px solid var(--border2);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical">${q.text}</textarea>
+        ${buildFormatToolbar('eq_text_editor')}
       </div>
       <div class="fg fg-full">
         <label>Question Image <span style="color:var(--text3);font-weight:400">(optional)</span></label>
@@ -3766,7 +3842,9 @@ function openEditQuestionInline(qId, testId) {
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="openEditTestModal(${testId})">Back</button>
       <button class="btn btn-primary" onclick="saveEditQuestion(${qId},${testId})">Save Question</button>
+    
     </div>`);
+  setTimeout(function() { setQText('eq_text_editor', q.text || ''); }, 30);
   window._eq_removeImg = false;
 }
 
@@ -3960,7 +4038,7 @@ function saveEditQuestion(qId, testId) {
 
   db.questions[idx] = {
     ...db.questions[idx],
-    text: (document.getElementById('eq_text')?.value||'').trim(),
+    text: (getQText('eq_text_editor')||'').trim(),
     options: opts,
     correct: correctEl ? parseInt(correctEl.value) : 0,
     subject: (document.getElementById('eq_subject')?.value||'').trim(),
