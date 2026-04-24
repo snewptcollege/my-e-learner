@@ -744,7 +744,8 @@ function userToRow(u) {
     assigned_categories: Array.isArray(u.assignedCategories) ? u.assignedCategories : [],
     assigned_subcategories: Array.isArray(u.assignedSubcategories) ? u.assignedSubcategories : [],
     source: String(u.source || 'self'),
-    registered_on: String(u.registeredOn || new Date().toLocaleDateString('en-IN'))
+    registered_on: String(u.registeredOn || new Date().toLocaleDateString('en-IN')),
+    student_id: String(u.studentId || '')
   };
 }
 
@@ -763,7 +764,8 @@ function rowToUser(r) {
     assignedSubcategories: Array.isArray(r.assigned_subcategories) ? r.assigned_subcategories : (r.assigned_subcategories ? JSON.parse(r.assigned_subcategories) : []),
     source: r.source,
     registeredOn: r.registered_on,
-    registeredAt: r.registered_at
+    registeredAt: r.registered_at,
+    studentId: r.student_id || ''
   };
 }
 
@@ -941,6 +943,14 @@ function loadDB() {
     db = { users: [...DEFAULT_USERS], questions: [], tests: [], results: [], subcategories: [], examCategories: [...DEFAULT_EXAM_CATEGORIES] };
     localStorage.setItem(STORE, JSON.stringify(db));
   }
+  // Auto-assign student IDs if missing
+  let idCounter = 1;
+  db.users.filter(u => u.role === 'student').sort((a,b) => new Date(a.registeredAt||0) - new Date(b.registeredAt||0)).forEach(u => {
+    if (!u.studentId) {
+      u.studentId = 'SC' + String(idCounter).padStart(4, '0');
+    }
+    idCounter++;
+  });
   loadExamCategories();
   const savedTime = localStorage.getItem('myelearner_last_save');
   if (savedTime) {
@@ -957,6 +967,20 @@ function loadDB() {
 function normalizeSubcat(sc) {
   const catId = sc.categoryId || sc.category_id || '';
   return { ...sc, categoryId: catId, category_id: catId };
+}
+
+function _renderStudentsTable() {
+  const mc = document.getElementById('pageContent');
+  if (!mc) return;
+  mc.innerHTML = renderStudentsAdmin();
+  updatePendingBadge();
+  // Restore focus to search input
+  const search = mc.querySelector('input[placeholder*="Search"]');
+  if (search) {
+    search.focus();
+    const len = search.value.length;
+    search.setSelectionRange(len, len);
+  }
 }
 
 function saveDB() {
@@ -1564,7 +1588,9 @@ function renderStudentsAdmin() {
     !searchVal ||
     u.name.toLowerCase().includes(searchVal.toLowerCase()) ||
     (u.email&&u.email.toLowerCase().includes(searchVal.toLowerCase())) ||
-    (u.phone&&u.phone.includes(searchVal))
+    (u.phone&&u.phone.includes(searchVal)) ||
+    (u.studentId&&u.studentId.toLowerCase().includes(searchVal.toLowerCase())) ||
+    (u.username&&u.username.toLowerCase().includes(searchVal.toLowerCase()))
   );
 
   window._stuFiltered = filtered;
@@ -1584,7 +1610,7 @@ function renderStudentsAdmin() {
     + '<button class="ftab ' + (tab==='rejected'?'active':'') + '" onclick="window._stuTab=\'rejected\';window._stuSearch=\'\';goPage(\'students-admin\')">🚫 Suspended (' + rejected.length + ')</button>'
     + '<button class="ftab ' + (tab==='all'?'active':'') + '" onclick="window._stuTab=\'all\';window._stuSearch=\'\';goPage(\'students-admin\')">All (' + allStuds.length + ')</button>'
     + '</div>'
-    + '<input type="text" placeholder="🔍 Search students..." value="' + (searchVal||'') + '" oninput="window._stuSearch=this.value;goPage(\'students-admin\')" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:var(--radius);font-size:13px;font-family:inherit;flex:1;min-width:160px">'
+    + '<input type="text" placeholder="🔍 Search students..." value="' + (searchVal||'') + '" oninput="window._stuSearch=this.value;_renderStudentsTable()" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:var(--radius);font-size:13px;font-family:inherit;flex:1;min-width:160px">'
     + '<button class="btn btn-primary btn-sm" onclick="openAddStudentModal()">+ Add Student</button>'
     + '<label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">⬆ Import CSV<input type="file" accept=".csv" onchange="uploadStudentExcel(this)" style="display:none"></label>'
     + '<button class="btn btn-ghost btn-sm" onclick="downloadStudentExcel()">⬇ Export CSV</button>'
@@ -1592,7 +1618,7 @@ function renderStudentsAdmin() {
     + (filtered.length === 0
       ? '<div style="text-align:center;padding:3rem;color:var(--text3);background:var(--surface);border-radius:var(--radius-lg);border:1.5px dashed var(--border2)">' + (searchVal ? 'No students match your search.' : 'No students here yet.') + '</div>'
       : '<div style="overflow-x:auto"><table class="admin-table"><thead><tr>'
-        + '<th>Student</th><th>Contact</th><th>Password</th><th>Categories</th><th>Tests</th><th>Status</th><th>Actions</th>'
+        + '<th>ID</th><th>Student</th><th>Contact</th><th>Password</th><th>Categories</th><th>Tests</th><th>Status</th><th>Actions</th>'
         + '</tr></thead><tbody>'
         + filtered.map((u, i) => {
             const rr = db.results.filter(r=>r.username===u.username);
@@ -1607,7 +1633,12 @@ function renderStudentsAdmin() {
               : hasCats
                 ? '<span class="active-badge">✓ Active</span>'
                 : '<span class="pending-badge">⏳ Pending</span>';
-            return '<tr>'
+            // Auto-assign ID if not present
+              if (!u.studentId) {
+                u.studentId = 'SC' + String(allStuds.indexOf(u) + 1).padStart(4, '0');
+              }
+              return '<tr>'
+              + '<td><div style="font-family:monospace;font-weight:700;font-size:13px;color:var(--primary)">' + u.studentId + '</div></td>'
               + '<td><div style="font-weight:700">' + u.name + '</div><div style="font-size:11px;color:var(--text3)">' + (u.registeredOn||'') + '</div></td>'
               + '<td style="font-size:12px"><div>' + (u.email||u.username) + '</div><div style="color:var(--text2)">' + (u.phone||'') + '</div></td>'
               + '<td><span style="font-size:12px;font-family:monospace;background:var(--surface2);padding:3px 8px;border-radius:var(--radius);border:1px solid var(--border);color:var(--text2)">' + (u.password||'') + '</span></td>'
@@ -2119,6 +2150,7 @@ function renderStudentProfile() {
     + '<div style="font-size:13px;color:var(--text2);margin-top:2px">' + (u.email||u.username) + '</div>'
     + (u.phone?'<div style="font-size:13px;color:var(--text2)">'+u.phone+'</div>':'')
     + '<span style="display:inline-block;margin-top:6px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:700;padding:3px 12px;border-radius:9999px;border:1px solid var(--blue-light);text-transform:uppercase">Student</span>'
+    + (u.studentId ? '<span style="display:inline-block;margin-top:6px;margin-left:6px;background:var(--primary-bg);color:var(--primary);font-size:11px;font-weight:700;padding:3px 12px;border-radius:9999px;border:1px solid var(--primary-light)">🪪 ID: ' + u.studentId + '</span>' : '')
     + '</div></div>'
     + '<div class="card"><div style="font-size:14px;font-weight:800;margin-bottom:1.25rem">Change Password</div>'
     + '<div class="fg" style="margin-bottom:12px"><label>Current Password</label><input id="sp_cur_pw" type="password" placeholder="Enter current password"></div>'
