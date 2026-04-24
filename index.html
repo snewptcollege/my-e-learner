@@ -744,8 +744,7 @@ function userToRow(u) {
     assigned_categories: Array.isArray(u.assignedCategories) ? u.assignedCategories : [],
     assigned_subcategories: Array.isArray(u.assignedSubcategories) ? u.assignedSubcategories : [],
     source: String(u.source || 'self'),
-    registered_on: String(u.registeredOn || new Date().toLocaleDateString('en-IN')),
-    student_id: String(u.studentId || '')
+    registered_on: String(u.registeredOn || new Date().toLocaleDateString('en-IN'))
   };
 }
 
@@ -764,8 +763,7 @@ function rowToUser(r) {
     assignedSubcategories: Array.isArray(r.assigned_subcategories) ? r.assigned_subcategories : (r.assigned_subcategories ? JSON.parse(r.assigned_subcategories) : []),
     source: r.source,
     registeredOn: r.registered_on,
-    registeredAt: r.registered_at,
-    studentId: r.student_id || ''
+    registeredAt: r.registered_at
   };
 }
 
@@ -992,9 +990,11 @@ function getStudentId(u) {
 function _renderStudentsTable() {
   const mc = document.getElementById('pageContent');
   if (!mc) return;
-  // Don't re-render if a modal is open
   if (document.getElementById('globalModal')) return;
+  // Save current scroll position
+  const scrollY = window.scrollY;
   mc.innerHTML = renderStudentsAdmin();
+  window.scrollTo(0, scrollY);
   updatePendingBadge();
   // Restore focus to search input
   const search = mc.querySelector('input[placeholder*="Search"]');
@@ -2639,7 +2639,8 @@ function goPage(p, skipHistory) {
             db.users = [...merged, ...db.users.filter(u => !new Set(remoteUsers.map(x=>x.username)).has(u.username))];
             try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
             const mc2 = document.getElementById('pageContent');
-            if (mc2 && currentPage === 'students-admin') { mc2.innerHTML = renderStudentsAdmin(); updatePendingBadge(); }
+            // Don't re-render - update data silently only
+            if (currentPage === 'students-admin') { updatePendingBadge(); }
           }
         }).catch(() => {});
       }
@@ -4284,10 +4285,7 @@ document.addEventListener('visibilitychange', function() {
       if (currentUser) {
         updatePendingBadge();
         // Re-render students page if open
-        if (window._currentPage === 'students-admin') {
-          const mc = document.getElementById('pageContent');
-          if (mc) mc.innerHTML = renderStudentsAdmin();
-        }
+        // Don't re-render students page automatically
       }
     }).catch(() => {});
   }
