@@ -1666,10 +1666,10 @@ function renderStudentsAdmin() {
               + '<td style="font-size:13px">' + rr.length + (best ? ' <span style="color:var(--green);font-size:11px">('+best+'%)</span>' : '') + '</td>'
               + '<td>' + statusBadge + '</td>'
               + '<td style="white-space:nowrap">'
-              + '<button class="btn btn-ghost btn-sm" onclick="stuByIdx('+i+',\'edit\')">Edit</button>'
-              + '<button class="btn btn-ghost btn-sm" onclick="stuByIdx('+i+',\'pw\')" style="margin-left:4px">PW</button>'
-              + '<button class="btn btn-sm" style="margin-left:4px;border-color:' + (u.suspended?'var(--green)':'var(--amber)') + ';color:' + (u.suspended?'var(--green)':'var(--amber)') + '" onclick="stuByIdx('+i+',\'suspend\')">' + (u.suspended?'Restore':'Suspend') + '</button>'
-              + '<button class="btn btn-red btn-sm" onclick="stuByIdx('+i+',\'delete\')" style="margin-left:4px">Delete</button>'
+              + '<button class="btn btn-ghost btn-sm" onclick="openEditStudentModal(\''+u.username+'\')">Edit</button>'
+              + '<button class="btn btn-ghost btn-sm" onclick="openResetPwModal(\\\'\'+u.username+\'\\\')">PW</button>'
+              + '<button class="btn btn-sm" style="margin-left:4px;border-color:\' + (u.suspended?\'var(--green)\':\'var(--amber)\') + \';color:\' + (u.suspended?\'var(--green)\':\'var(--amber)\') + \'" onclick="toggleSuspend(\\\'\'+u.username+\'\\\')">\'+ (u.suspended?\'Restore\':\'Suspend\') + \'</button>'
+              + '<button class="btn btn-red btn-sm" onclick="deleteStudent(\\\'\'+u.username+\'\\\')" style="margin-left:4px">Delete</button>'
               + '</td>'
               + '</tr>';
           }).join('')
