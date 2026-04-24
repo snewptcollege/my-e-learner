@@ -4207,75 +4207,57 @@ checkSession();
 // This ensures admin category changes reach students quickly
 setInterval(function() {
   if (!currentUser) return;
-  // Pull current user's fresh data from Supabase
-  sbSelect('users', 'username=eq.' + encodeURIComponent(currentUser.username)).then(function(res) {
-    if (!res.error && res.data && res.data.length > 0) {
-      const freshData = rowToUser(res.data[0]);
-      const idx = db.users.findIndex(u => u.username === currentUser.username);
-      if (idx >= 0) db.users[idx] = freshData;
-      currentUser.assignedCategories = freshData.assignedCategories || [];
-      currentUser.assignedSubcategories = freshData.assignedSubcategories || [];
-      sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
-      try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
-    }
-  }).catch(function() {});
-  if (!currentUser) return;
 
-  if (currentUser.role === 'admin' && !window._syncBlocked) {
-    // ADMIN: pull ALL users to get latest changes from other devices
-    sbSelect('users', null).then(function(res) {
-      if (!res.error && res.data && res.data.length > 0) {
-        db.users = res.data.map(rowToUser);
-        try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
-        updatePendingBadge();
-        // Only re-render if no modal is open
-        const mc = document.getElementById('pageContent');
-        const modalOpen = !!document.getElementById('globalModal');
-        if (mc && currentPage === 'students-admin' && !modalOpen) {
-          mc.innerHTML = renderStudentsAdmin();
+  if (currentUser.role === 'admin') {
+    // ADMIN: silently fetch latest users, update db only - NO DOM changes
+    if (!window._syncBlocked) {
+      sbSelect('users', null).then(function(res) {
+        if (!res.error && res.data && res.data.length > 0) {
+          db.users = res.data.map(rowToUser);
+          try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
           updatePendingBadge();
         }
-      }
-    }).catch(function() {});
+      }).catch(function() {});
+    }
     // Push local data
-    db.users.forEach(u => { try { sbUpsert('users', userToRow(u)); } catch(e){} });
-    db.tests.forEach(t => { try { sbUpsert('tests', testToRow(t)); } catch(e){} });
+    if (!window._syncBlocked) {
+      db.users.forEach(function(u) { try { sbUpsert('users', userToRow(u)); } catch(e){} });
+      db.tests.forEach(function(t) { try { sbUpsert('tests', testToRow(t)); } catch(e){} });
+    }
 
   } else if (currentUser.role === 'student') {
-    // STUDENT: pull their OWN latest data to get new category assignments
+    // STUDENT: fetch own data to get latest category assignments
     sbSelect('users', 'username=eq.' + encodeURIComponent(currentUser.username)).then(function(res) {
       if (!res.error && res.data && res.data.length > 0) {
         const freshUser = rowToUser(res.data[0]);
-        // Check if categories changed
         const oldCats = JSON.stringify(currentUser.assignedCategories || []);
         const newCats = JSON.stringify(freshUser.assignedCategories || []);
-        // Update db and currentUser
-        const idx = db.users.findIndex(u => u.username === currentUser.username);
+        const idx = db.users.findIndex(function(u) { return u.username === currentUser.username; });
         if (idx >= 0) db.users[idx] = freshUser;
         currentUser.assignedCategories = freshUser.assignedCategories || [];
         currentUser.assignedSubcategories = freshUser.assignedSubcategories || [];
         currentUser.suspended = freshUser.suspended;
         sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
         try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
-        // If categories changed, re-render current page
+        // Only update UI if categories changed and no modal open
         if (oldCats !== newCats) {
-          const mc = document.getElementById('pageContent');
-          const modalOpen2 = !!document.getElementById('globalModal');
-          if (mc && !modalOpen2) {
+          var mc = document.getElementById('pageContent');
+          var modalOpen = !!document.getElementById('globalModal');
+          if (mc && !modalOpen) {
             if (currentPage === 'home') mc.innerHTML = renderHome();
             else if (currentPage === 'tests') mc.innerHTML = renderTests();
           }
           showToast('Your exam access has been updated!', 'success');
         }
-        // If suspended, log out
         if (freshUser.suspended) {
-          showToast('Your account has been suspended. Please contact admin.', 'error');
+          showToast('Your account has been suspended.', 'error');
           setTimeout(function() { doLogout(); }, 2000);
         }
       }
     }).catch(function() {});
   }
 }, 5 * 1000);
+
 
 // Sync when user returns to the tab (visibility change)
 document.addEventListener('visibilitychange', function() {
