@@ -1649,7 +1649,7 @@ function renderStudentsAdmin() {
             const best = rr.length ? Math.max(...rr.map(r=>r.percent)) : 0;
             const cats = (u.assignedCategories||[]).map(cid => {
               const cat = EXAM_CATEGORIES.find(c=>c.id===cid);
-              return cat ? '<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;background:' + cat.bg + ';color:' + cat.color + ';border:1px solid ' + cat.color + '">' + cat.icon + ' ' + cat.label + '</span>' : '';
+              return cat ? `<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;background:${cat.bg};color:${cat.color};border:1px solid ${cat.color}">${cat.icon} ${cat.label}</span>` : '';
             }).join(' ');
             const hasCats = u.assignedCategories && u.assignedCategories.length > 0;
             const statusBadge = u.suspended
@@ -1657,25 +1657,24 @@ function renderStudentsAdmin() {
               : hasCats
                 ? '<span class="active-badge">✓ Active</span>'
                 : '<span class="pending-badge">⏳ Pending</span>';
-            // Auto-assign ID if not present
-              const _sid = u.studentId || getStudentId(u);
-              return '<tr>'
-              + '<td><div style="font-family:monospace;font-weight:700;font-size:13px;color:var(--primary)">' + _sid + '</div></td>'
-              + '<td><div style="font-weight:700">' + u.name + '</div><div style="font-size:11px;color:var(--text3)">' + (u.registeredOn||'') + '</div></td>'
-              + '<td style="font-size:12px"><div>' + (u.email||u.username) + '</div><div style="color:var(--text2)">' + (u.phone||'') + '</div></td>'
-              + '<td><span style="font-size:12px;font-family:monospace;background:var(--surface2);padding:3px 8px;border-radius:var(--radius);border:1px solid var(--border);color:var(--text2)">' + (u.password||'') + '</span></td>'
-              + '<td>' + (cats || '<span style="font-size:11px;color:var(--text3)">None assigned</span>') + '</td>'
-              + '<td style="font-size:13px">' + rr.length + (best ? ' <span style="color:var(--green);font-size:11px">('+best+'%)</span>' : '') + '</td>'
-              + '<td>' + statusBadge + '</td>'
-              + '<td style="white-space:nowrap">'
-              + '<button class="btn btn-ghost btn-sm" onclick="openEditStudentModal(\'' + u.username + '\')" >Edit</button>'
-              + '<button class="btn btn-ghost btn-sm" onclick="openResetPwModal(\'' + u.username + '\')" style="margin-left:4px">PW</button>'
-              + '<button class="btn btn-sm" style="margin-left:4px;border-color:' + (u.suspended ? 'var(--green)' : 'var(--amber)') + ';color:' + (u.suspended ? 'var(--green)' : 'var(--amber)') + '" onclick="toggleSuspend(\'' + u.username + '\')">' + (u.suspended ? 'Restore' : 'Suspend') + '</button>'
-
-
-              + '<button class="btn btn-red btn-sm" onclick="deleteStudent(\'' + u.username + '\')" style="margin-left:4px">Delete</button>'
-              + '</td>'
-              + '</tr>';
+            const sid = u.studentId || getStudentId(u);
+            const suspendLabel = u.suspended ? 'Restore' : 'Suspend';
+            const suspendColor = u.suspended ? 'var(--green)' : 'var(--amber)';
+            return `<tr>
+              <td><div style="font-family:monospace;font-weight:700;font-size:13px;color:var(--primary)">${sid}</div></td>
+              <td><div style="font-weight:700">${u.name}</div><div style="font-size:11px;color:var(--text3)">${u.registeredOn||''}</div></td>
+              <td style="font-size:12px"><div>${u.email||u.username}</div><div style="color:var(--text2)">${u.phone||''}</div></td>
+              <td><span style="font-size:12px;font-family:monospace;background:var(--surface2);padding:3px 8px;border-radius:var(--radius);border:1px solid var(--border);color:var(--text2)">${u.password||''}</span></td>
+              <td>${cats || '<span style="font-size:11px;color:var(--text3)">None assigned</span>'}</td>
+              <td style="font-size:13px">${rr.length}${best ? ' <span style="color:var(--green);font-size:11px">('+best+'%)</span>' : ''}</td>
+              <td>${statusBadge}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-ghost btn-sm" onclick="openEditStudentModal('${u.username}')">Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="openResetPwModal('${u.username}')" style="margin-left:4px">PW</button>
+                <button class="btn btn-sm" style="margin-left:4px;border-color:${suspendColor};color:${suspendColor}" onclick="toggleSuspend('${u.username}')">${suspendLabel}</button>
+                <button class="btn btn-red btn-sm" onclick="deleteStudent('${u.username}')" style="margin-left:4px">Delete</button>
+              </td>
+            </tr>`;
           }).join('')
         + '</tbody></table></div>'
     );
