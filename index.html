@@ -2425,6 +2425,12 @@ function attemptLogin(raw, p, err) {
     sbSelect('users', 'username=eq.' + encodeURIComponent(user.username)).then(function(res) {
       if (!res.error && res.data && res.data.length > 0) {
         const freshUser = rowToUser(res.data[0]);
+        // If local says NOT suspended but Supabase says suspended,
+        // trust local (admin may have just restored, XHR not arrived yet)
+        if (!user.suspended && freshUser.suspended) {
+          freshUser.suspended = false;
+          freshUser.assignedCategories = user.assignedCategories || freshUser.assignedCategories;
+        }
         const idx = db.users.findIndex(u => u.username === user.username);
         if (idx >= 0) db.users[idx] = freshUser;
         try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
