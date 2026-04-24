@@ -1915,6 +1915,7 @@ function deleteStudent(username) {
   if (!u) { showToast('Student not found','error'); return; }
   showConfirm('Delete account for <strong>'+u.name+'</strong>? This cannot be undone.', function() {
     deleteUserFromSupabase(username);
+    window._deletedUsernames.add(username); // Track deleted users
     db.users = db.users.filter(x=>x.username!==username);
     db.results = db.results.filter(r=>r.username!==username);
     saveDB();
@@ -4224,6 +4225,9 @@ function deleteSubcatFromSupabase(id) {
   sbDelete('subcategories', 'id', id);
 }
 
+// Track deleted usernames to prevent them coming back from Supabase sync
+window._deletedUsernames = new Set();
+
 loadDB();
 checkSession();
 
@@ -4241,7 +4245,10 @@ setInterval(function() {
     if (!window._syncBlocked) {
       sbSelect('users', null).then(function(res) {
         if (!res.error && res.data && res.data.length > 0) {
-          db.users = res.data.map(rowToUser);
+          // Filter out locally deleted users that haven't been removed from Supabase yet
+          const fetchedUsers = res.data.map(rowToUser)
+            .filter(u => !window._deletedUsernames.has(u.username));
+          db.users = fetchedUsers;
           try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
           updatePendingBadge();
         }
