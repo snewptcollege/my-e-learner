@@ -1585,7 +1585,23 @@ function toggleEsCatBox(checkbox, boxId) {
 }
 
 function stuByIdx(i, action) {
-  const u = window._stuFiltered && window._stuFiltered[i];
+  // Rebuild filtered list fresh to ensure correct index
+  const tab = window._stuTab || 'pending';
+  const allStuds = db.users.filter(u=>u.role==='student')
+    .sort((a,b)=>new Date(b.registeredAt||0)-new Date(a.registeredAt||0));
+  const pending  = allStuds.filter(u=>!u.suspended && (!u.assignedCategories || u.assignedCategories.length === 0));
+  const active   = allStuds.filter(u=>!u.suspended && u.assignedCategories && u.assignedCategories.length > 0);
+  const rejected = allStuds.filter(u=>u.suspended);
+  const searchVal = window._stuSearch || '';
+  let pool = tab==='pending' ? pending : tab==='active' ? active : tab==='rejected' ? rejected : allStuds;
+  const filtered = pool.filter(u =>
+    !searchVal ||
+    u.name.toLowerCase().includes(searchVal.toLowerCase()) ||
+    (u.email&&u.email.toLowerCase().includes(searchVal.toLowerCase())) ||
+    (u.phone&&u.phone.includes(searchVal)) ||
+    (u.studentId||getStudentId(u)||'').toLowerCase().includes(searchVal.toLowerCase())
+  );
+  const u = filtered[i];
   if (!u) return;
   const username = u.username;
   if      (action === 'approve') approveStudent(username);
@@ -1669,10 +1685,10 @@ function renderStudentsAdmin() {
               <td style="font-size:13px">${rr.length}${best ? ' <span style="color:var(--green);font-size:11px">('+best+'%)</span>' : ''}</td>
               <td>${statusBadge}</td>
               <td style="white-space:nowrap">
-                <button class="btn btn-ghost btn-sm" onclick="openEditStudentModal('${u.username}')">Edit</button>
-                <button class="btn btn-ghost btn-sm" onclick="openResetPwModal('${u.username}')" style="margin-left:4px">PW</button>
-                <button class="btn btn-sm" style="margin-left:4px;border-color:${suspendColor};color:${suspendColor}" onclick="toggleSuspend('${u.username}')">${suspendLabel}</button>
-                <button class="btn btn-red btn-sm" onclick="deleteStudent('${u.username}')" style="margin-left:4px">Delete</button>
+                <button class="btn btn-ghost btn-sm" onclick="stuByIdx(${i},'edit')">Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="stuByIdx(${i},'pw')" style="margin-left:4px">PW</button>
+                <button class="btn btn-sm" style="margin-left:4px;border-color:${suspendColor};color:${suspendColor}" onclick="stuByIdx(${i},'suspend')">${suspendLabel}</button>
+                <button class="btn btn-red btn-sm" onclick="stuByIdx(${i},'delete')" style="margin-left:4px">Delete</button>
               </td>
             </tr>`;
           }).join('')
