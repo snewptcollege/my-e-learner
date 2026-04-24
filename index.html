@@ -1630,7 +1630,7 @@ function renderStudentsAdmin() {
     + '<button class="ftab ' + (tab==='rejected'?'active':'') + '" onclick="window._stuTab=\'rejected\';window._stuSearch=\'\';goPage(\'students-admin\')">🚫 Suspended (' + rejected.length + ')</button>'
     + '<button class="ftab ' + (tab==='all'?'active':'') + '" onclick="window._stuTab=\'all\';window._stuSearch=\'\';goPage(\'students-admin\')">All (' + allStuds.length + ')</button>'
     + '</div>'
-    + '<input type="text" placeholder="🔍 Search students..." value="' + (searchVal||'') + '" oninput="window._stuSearch=this.value;_renderStudentsTable()" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:var(--radius);font-size:13px;font-family:inherit;flex:1;min-width:160px">'
+    + '<input type="text" placeholder="🔍 Search by Name, ID, Email or Phone..." value="' + (searchVal||'') + '" oninput="window._stuSearch=this.value;_renderStudentsTable()" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:var(--radius);font-size:13px;font-family:inherit;flex:1;min-width:160px">'
     + '<button class="btn btn-primary btn-sm" onclick="openAddStudentModal()">+ Add Student</button>'
     + '<label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">⬆ Import CSV<input type="file" accept=".csv" onchange="uploadStudentExcel(this)" style="display:none"></label>'
     + '<button class="btn btn-ghost btn-sm" onclick="downloadStudentExcel()">⬇ Export CSV</button>'
