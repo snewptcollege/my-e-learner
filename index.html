@@ -1604,14 +1604,16 @@ function renderStudentsAdmin() {
   const searchVal = window._stuSearch || '';
 
   let pool = tab==='pending' ? pending : tab==='active' ? active : tab==='rejected' ? rejected : allStuds;
-  const filtered = pool.filter(u =>
-    !searchVal ||
-    u.name.toLowerCase().includes(searchVal.toLowerCase()) ||
-    (u.email&&u.email.toLowerCase().includes(searchVal.toLowerCase())) ||
-    (u.phone&&u.phone.includes(searchVal)) ||
-    (u.studentId&&u.studentId.toLowerCase().includes(searchVal.toLowerCase())) ||
-    (u.username&&u.username.toLowerCase().includes(searchVal.toLowerCase()))
-  );
+  const filtered = pool.filter(u => {
+    if (!searchVal) return true;
+    const sv = searchVal.toLowerCase();
+    const sid = (u.studentId || getStudentId(u) || '').toLowerCase();
+    return u.name.toLowerCase().includes(sv) ||
+      (u.email && u.email.toLowerCase().includes(sv)) ||
+      (u.phone && u.phone.includes(searchVal)) ||
+      sid.includes(sv) ||
+      (u.username && u.username.toLowerCase().includes(sv));
+  });
 
   window._stuFiltered = filtered;
 
@@ -4213,15 +4215,13 @@ setInterval(function() {
       try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
     }
   }).catch(function() {});
-  // For ADMIN: pull ALL users from Supabase to get latest changes from other admins
-  if (currentUser && currentUser.role === 'admin' && !window._syncBlocked) {
+  if (!currentUser) return;
+
+  if (currentUser.role === 'admin' && !window._syncBlocked) {
+    // ADMIN: pull ALL users to get latest changes from other devices
     sbSelect('users', null).then(function(res) {
       if (!res.error && res.data && res.data.length > 0) {
-        const remoteUsers = res.data.map(rowToUser);
-        // Trust Supabase completely for admin sync (no recent local save)
-        const adminUser = db.users.find(u => u.role === 'admin' && u.username === currentUser.username);
-        db.users = remoteUsers;
-        // Re-render student management if open
+        db.users = res.data.map(rowToUser);
         try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
         updatePendingBadge();
         const mc = document.getElementById('pageContent');
@@ -4231,11 +4231,42 @@ setInterval(function() {
         }
       }
     }).catch(function() {});
-  }
-  // Push local data to Supabase
-  if (!window._syncBlocked) {
+    // Push local data
     db.users.forEach(u => { try { sbUpsert('users', userToRow(u)); } catch(e){} });
     db.tests.forEach(t => { try { sbUpsert('tests', testToRow(t)); } catch(e){} });
+
+  } else if (currentUser.role === 'student') {
+    // STUDENT: pull their OWN latest data to get new category assignments
+    sbSelect('users', 'username=eq.' + encodeURIComponent(currentUser.username)).then(function(res) {
+      if (!res.error && res.data && res.data.length > 0) {
+        const freshUser = rowToUser(res.data[0]);
+        // Check if categories changed
+        const oldCats = JSON.stringify(currentUser.assignedCategories || []);
+        const newCats = JSON.stringify(freshUser.assignedCategories || []);
+        // Update db and currentUser
+        const idx = db.users.findIndex(u => u.username === currentUser.username);
+        if (idx >= 0) db.users[idx] = freshUser;
+        currentUser.assignedCategories = freshUser.assignedCategories || [];
+        currentUser.assignedSubcategories = freshUser.assignedSubcategories || [];
+        currentUser.suspended = freshUser.suspended;
+        sessionStorage.setItem('ssc_session', JSON.stringify(currentUser));
+        try { localStorage.setItem(STORE, JSON.stringify(db)); } catch(e) {}
+        // If categories changed, re-render current page
+        if (oldCats !== newCats) {
+          const mc = document.getElementById('pageContent');
+          if (mc) {
+            if (currentPage === 'home') mc.innerHTML = renderHome();
+            else if (currentPage === 'tests') mc.innerHTML = renderTests();
+          }
+          showToast('Your exam access has been updated!', 'success');
+        }
+        // If suspended, log out
+        if (freshUser.suspended) {
+          showToast('Your account has been suspended. Please contact admin.', 'error');
+          setTimeout(function() { doLogout(); }, 2000);
+        }
+      }
+    }).catch(function() {});
   }
 }, 30 * 1000);
 
