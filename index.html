@@ -3589,6 +3589,21 @@ function saveEditTest(id) {
   showToast('Test updated!', 'success');
 }
 
+function deleteTest(id) {
+  const t = db.tests.find(x => x.id === id);
+  if (!t) return;
+  showConfirm('Delete test <strong>' + t.title + '</strong>? This cannot be undone.', function() {
+    db.tests = db.tests.filter(x => x.id !== id);
+    saveDB();
+    deleteTestFromSupabase(id);
+    window._syncBlocked = true;
+    clearTimeout(window._syncBlockTimer);
+    window._syncBlockTimer = setTimeout(function() { window._syncBlocked = false; }, 60000);
+    goPage('admin');
+    showToast('Test deleted.', 'warn');
+  }, 'danger');
+}
+
 function deleteTestFromSupabase(id) {
   sbDelete('tests', 'id', id);
 }
